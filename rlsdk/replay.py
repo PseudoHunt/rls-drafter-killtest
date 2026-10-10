@@ -19,6 +19,7 @@ from dflash.model import (
 )
 
 from .guard import Frontier, Guarded
+from .window import WindowCache, deferred_key_rope
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +129,12 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
     frontier = Frontier(P)  # prefill revealed target states for positions < P
     ctx = Guarded(tf.ctx, frontier, "ctx")
     hstar = Guarded(tf.hstar, frontier, "hstar")
-    cache = _make_cache(drafter.config)
+    win = getattr(adapter, "ctx_window", None)  # windowed drafter context (rlsdk/window.py)
+    if win is None:
+        cache = _make_cache(drafter.config)
+    else:
+        keep = P if win["keep"] == "prompt" else int(win["keep"])
+        cache = WindowCache(drafter, keep, win["W"], T, device, next(drafter.parameters()).dtype)
     if hasattr(adapter, "bind_head"):  # KL arms: W = lm_head weight
         adapter.bind_head(head)
     adapter.reset(H, device)
@@ -146,10 +152,16 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
                 block = torch.full((1, verify_size), mask_id, dtype=torch.long, device=device)
                 block[0, 0] = ids[start]
                 noise = _raw_input_embeddings(target, block, scale)
-                pos = torch.arange(c0, start + verify_size, device=device)[None]
-                z = drafter(target_hidden=target_hidden, noise_embedding=noise, position_ids=pos,
-                            past_key_values=cache, use_cache=True)[:, 1 - verify_size:, :][0]
-                _crop_to(cache, start)
+                if win is None:
+                    pos = torch.arange(c0, start + verify_size, device=device)[None]
+                    z = drafter(target_hidden=target_hidden, noise_embedding=noise, position_ids=pos,
+                                past_key_values=cache, use_cache=True)[:, 1 - verify_size:, :][0]
+                    _crop_to(cache, start)
+                else:
+                    pos = cache.begin(c0, start, verify_size)
+                    with deferred_key_rope():
+                        z = drafter(target_hidden=target_hidden, noise_embedding=noise, position_ids=pos,
+                                    past_key_values=cache, use_cache=True)[:, 1 - verify_size:, :][0]
                 slots = torch.arange(1, verify_size, device=device)
                 zp = adapter.apply(z, slots)
                 draft = drafter.compute_logits(zp[None], head)[0].argmax(-1)
@@ -200,6 +212,8 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
         solve_ms = adapter.pop_solve_ms() if hasattr(adapter, "pop_solve_ms") else 0.0
         row = {"round": r, "t": t, "pos": t - P, "a": a, "tau": produced, "m": m,
                "draft_ms": round(draft_ms, 4), "update_ms": round(update_ms, 4), "solve_ms": round(solve_ms, 4)}
+        if win is not None:
+            row["ctx_len"] = cache.L  # visible context rows; max query-key distance = ctx_len + n_slots
         if hasattr(adapter, "pop_round_log"):
             row.update(adapter.pop_round_log())
         rounds.append(row)

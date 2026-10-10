@@ -45,3 +45,20 @@ Venvs live on local disk at `/home/envs/{env-dflash,env-vllm}` (rebuild: `uv ven
 **A30 session total (instance time incl. coding, 08:41:09–09:15:38 UTC): 0.575 A30-h** (the 25 s before row 12 was resume.sh). Old-GPU total stays 2.991 GPU-h.
 
 **Status:** screen decision = **stop this line** (pre-registered rule; best R = +0.123 < 0.25, optimistic since tuned on the same 4 traces). KL-linear lr = 1e-5 crossed ‖Az̃‖/‖z‖ > 0.2 in 34 rounds (max 0.209). See results/screen.md.
+
+**KL screen = STOP** (recorded 2026-10-10 09:25): best R = +0.12 (KL-linear lr = 1e-6) < 0.25. Measured cost: 7–9 ms
+per round of update and a 1.45 GiB fp32 lm_head copy (+75 MB KL-linear state).
+
+**Pre-registered before the windowed-context run (2026-10-10 09:30 UTC):**
+- Question: is the long-output decay mostly a long-context effect inside the drafter? Training-free: the drafter's
+  context attention is limited to a kept set + the last W committed positions, contiguous position ids inside the
+  kept cache (StreamingLLM-style; NOTES.md §9). Target and verification unchanged.
+- Grid (4 configs): W ∈ {1024, 4096} × kept set ∈ {first 64 tokens, full prompt}; same 4 reference traces.
+  Baseline re-run in the same pool (bit-identical τ, comparable drafting time).
+- R = (τ − 3.016) / 1.184 (A30 baseline, old-GPU TTS gain). Best R ≥ 0.5 → promising, plan a full held-out test;
+  R < 0.25 → close the long-output decay line; in between → report and ask. Also reported: τ for output positions
+  < 2K and ≥ 8K, and drafting ms/round. Configs chosen on the same 4 traces → best R optimistic.
+- Checks done before the run: 9 CPU unit tests (`tests/test_window.py`; bit-exact vs baseline when the context
+  fits, equals a fresh forward on the visible rows otherwise); real model on lcb_abc393_d with W = 1e6: 2,675/2,675
+  rounds identical to the A30 baseline. One look at the data before pre-registering: W = 1024, keep 64 on
+  lcb_abc393_d alone gave τ = 3.588 (a smoke test of the code path; it is part of the grid and is re-run there).

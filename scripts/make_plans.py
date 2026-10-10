@@ -4,6 +4,7 @@
   python scripts/make_plans.py grid --sigma2 X        -> configs/plan_dev_grid.yaml (bias + RLS + TTS stale)
   python scripts/make_plans.py refresh --lr L [...]   -> configs/plan_dev_refresh.yaml
   python scripts/make_plans.py screen [--out PATH]    -> configs/plan_screen.yaml (baseline + KL-bias + KL-linear)
+  python scripts/make_plans.py window [--out PATH]    -> configs/plan_window.yaml (baseline + windowed context)
 """
 import argparse
 import os
@@ -17,11 +18,13 @@ RLS_LAM = [0.995, 0.999, 0.9999, 1.0]
 TTS_LR = [1e-5, 3e-5, 1e-4]
 KLBIAS_ALPHA = [0.005, 0.01, 0.025]  # rho = 0.9
 KLLIN_LR = [1e-7, 1e-6, 1e-5]
+WINDOW_W = [1024, 4096]
+WINDOW_KEEP = [64, "prompt"]
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("what", choices=["baseline", "grid", "refresh", "screen"])
+    ap.add_argument("what", choices=["baseline", "grid", "refresh", "screen", "window"])
     ap.add_argument("--sigma2", type=float)
     ap.add_argument("--lr", type=float, nargs="*")
     ap.add_argument("--out")
@@ -39,6 +42,10 @@ def main():
         plan += [{"method": "klbias", "config": {"rho": 0.9, "alpha": a}} for a in KLBIAS_ALPHA]
         plan += [{"method": "kllinear", "config": {"lr": lr}} for lr in KLLIN_LR]
         name = "plan_screen.yaml"
+    elif args.what == "window":
+        plan = [{"method": "baseline"}]
+        plan += [{"method": "window", "config": {"W": w, "keep": k}} for w in WINDOW_W for k in WINDOW_KEEP]
+        name = "plan_window.yaml"
     else:
         plan = [{"method": "tts", "config": {"lr": lr, "refresh": True}} for lr in args.lr]
         name = "plan_dev_refresh.yaml"

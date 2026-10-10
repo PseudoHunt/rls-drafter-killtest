@@ -205,3 +205,25 @@ The teacher-forced pass runs once per trace and is shared across all configs.
   (decay). It is contained in `draft_ms + update_ms`.
 - TTS refresh: at the best stale lr; if it wins by > 5% there, also run it at the other two lrs.
 - Thinking-OFF control: `traces/traces_nothink.jsonl` (6 dev AIME prompts), baseline replay only.
+
+## 9. How DFlash (dflash 0.1.0) applies RoPE to context keys — for the windowed-context test
+
+- Each drafter layer (`Qwen3DFlashAttention.forward`, 5 layers, 8 KV heads × 128) builds keys from **two sources**:
+  `k_ctx = k_proj(hidden_norm(fc(target_hidden)))` for the newly committed context rows and `k_noise = k_proj(block)`
+  for the 16 block slots. Both go through `k_norm`, are concatenated, and are rotated **together** by
+  `apply_rotary_pos_emb(q, k, cos, sin)` with `cos/sin = rotary_emb(position_ids)` (θ = 1e6, no scaling). Queries
+  use only the last `q_len` rows of cos/sin.
+- Replay/generate pass `position_ids = arange(c0, start + 16)`: **absolute positions**. New context rows get their
+  true positions; block slots get `start .. start + 15`.
+- The keys are rotated **before** `past_key_values.update(k, v)`, so the `DynamicCache` stores *post-RoPE* keys at
+  absolute positions. After each forward the cache is cropped to `start` (drops the 16 block keys), so the cache
+  holds every context position `0 .. start − 1`, each rotated once with its own absolute position.
+- Attention is **full / non-causal** (`is_causal: null`, all layers `full_attention`, no sliding window, no mask):
+  every block query sees every cached context key and every block key. The largest query–key distance is therefore
+  `start + 15`, i.e. it grows with output position (up to ≈ 17K on our traces; `max_position_embeddings` 40960).
+- Consequence for a StreamingLLM-style window: the cached keys cannot simply be sliced, because their rotation encodes
+  absolute positions. `rlsdk/window.py` stores context keys **pre-RoPE** (post-`k_norm`), keeps
+  {kept set} ∪ {last W context positions}, and every round rotates them at **contiguous** positions
+  `0 .. L − 1` (L = |kept| + |window|), with the block at `L .. L + 15`. Max query–key distance = L + 15 ≤ |kept| + W + 15.
+  When the whole context fits (start ≤ |kept| + W), positions equal the absolute ones and the computation is the
+  baseline's, element for element (bit-exact; unit-tested). Target pass and verification are unchanged.

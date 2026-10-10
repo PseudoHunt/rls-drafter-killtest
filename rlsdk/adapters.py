@@ -37,6 +37,17 @@ class Baseline:
         return 0
 
 
+class Window(Baseline):
+    """No adaptation; the drafter's context is windowed (rlsdk/window.py). config: W, keep (int or "prompt")."""
+
+    method = "window"
+
+    def __init__(self, config):
+        super().__init__(config)
+        keep = config["keep"]
+        self.ctx_window = {"W": int(config["W"]), "keep": keep if keep == "prompt" else int(keep)}
+
+
 class Bias:
     """z' = z + b, b = exponentially weighted mean of residuals (h* - z), per-token decay rho.
 

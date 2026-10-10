@@ -14,11 +14,11 @@ import time
 import torch
 import yaml
 
-from .adapters import RLS, TTS, Baseline, Bias, KLBias, KLLinear
+from .adapters import RLS, TTS, Baseline, Bias, KLBias, KLLinear, Window
 from .replay import near_tie_rate, simulate, teacher_forced
 
 METHODS = {"baseline": Baseline, "bias": Bias, "rls": RLS, "rls_slot": RLS, "tts": TTS,
-           "klbias": KLBias, "kllinear": KLLinear}
+           "klbias": KLBias, "kllinear": KLLinear, "window": Window}
 
 
 def config_name(cfg):

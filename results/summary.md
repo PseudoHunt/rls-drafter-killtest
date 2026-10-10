@@ -84,3 +84,14 @@ Counts pooled over rounds within a dataset; mean = average of AIME and LCB. A ro
 | best hidden-residual bias (ρ=0.999) | 0.623 | 0.584 | 0.604 | 0.567 | 0.484 | 0.525 | 0.612 | 0.519 | 0.566 |
 
 Adaptation lowers acceptance at every slot group, most at slot 1 and slots 2–4; the hidden-residual bias costs the most. Together with the CPU diagnostic (RLS cuts out-of-sample hidden-state L2 error by ≈ 49% while lowering draft accuracy; HANDOFF.md), least squares on hidden states is not aligned with the drafter's argmax decisions.
+
+## KL screen (A30, 4 TTS-reference traces) = STOP
+
+Pre-registered rule (RUNLOG.md, A30 session): best arm R ≥ 0.5 promising, R < 0.25 stop. KL-bias (ρ = 0.9,
+α ∈ {0.005, 0.01, 0.025}) and KL-linear (Adam lr ∈ {1e-7, 1e-6, 1e-5}), fp32. A30 baseline τ = 3.016; gain_TTS = 1.184
+(old GPU).
+
+**Best arm: KL-linear lr = 1e-6, τ = 3.162, R = +0.12 → STOP** (optimistic: tuned on the same 4 traces). Best
+KL-bias: α = 0.01, R = +0.02; α = 0.025 is below the baseline (R = −0.12). Measured cost: 7–9 ms per round of
+update (vs ≈ 11 ms drafting), plus a 1.45 GiB fp32 copy of the lm_head weight; KL-linear state 75 MB. Full table:
+`results/screen.md`.

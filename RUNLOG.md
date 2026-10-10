@@ -166,3 +166,60 @@ per round of update and a 1.45 GiB fp32 lm_head copy (+75 MB KL-linear state).
 **A30 session total (instance time incl. coding and idle, 08:41:09–11:12:04 UTC): 2.515 A30-h.**
 
 **Status:** P3 arms coded and pre-registered; no held-out run launched. Open: tier plan (P1–P4, C2 seed 1, 8 A30-h cap) not in the repo; hybrid cost criterion vs probe.
+
+## Held-out plan — PRE-REGISTERED (2026-10-10 11:26 UTC, before launch; supersedes the earlier T1/T2/P3 drafts)
+
+**T0 (TTS setting).** AIME dev grid, 5 traces (aime24_II_02, aime24_II_09, aime24_II_13, aime24_II_14, aime24_I_10),
+pooled τ, truncated: baseline 3.258; TTS lr 1e-5 **4.487**, 3e-5 4.425, 1e-4 3.596. Chosen lr = **1e-5** (best stale lr,
+brief rule). Stale vs refresh: **refresh not run** (cancelled at the earlier pause) → **stale cache** (brief default).
+TTS setting = lr 1e-5, stale, full context.
+
+**T1 — all 50 test traces, in this order** (scripts/run_heldout.sh; replay, A30, 2 light workers then 1 TTS worker):
+1. baseline; window (W 1024 + prompt); S2 (W 1024 + prompt + 16 far 32-token chunks, target layers 17/25/33 at t'−1);
+   C1 (plain window W 1536 + prompt); C2 (W 1024 + prompt + 16 random far chunks, seed 0).
+2. Gate: auto-continue only if τ_window − τ_base ≥ 0.4 on test (decision variant). Otherwise stop, report, pause.
+3. TTS stride 1 (TTS setting).
+
+**T2 — 16 test traces** (8 AIME + 8 LCB, drawn with random.Random(16) from the non-dropped test traces; file
+configs/t2_traces.txt): aime24_II_01 aime24_II_10 aime24_II_12 aime24_I_01 aime24_I_03 aime24_I_04 aime24_I_05
+aime24_I_14 lcb_3697 lcb_abc391_e lcb_abc391_g lcb_abc396_e lcb_arc190_c lcb_arc192_b lcb_arc192_e lcb_arc194_d.
+- TTS stride 10 (TTS paper protocol: one step every 10 rounds, latest round's loss only; lr 1e-5, stale, full context);
+- S2 + TTS stride 10, pooled (S2 context; one step every 10 rounds on the summed loss of all 10 rounds' valid pairs
+  i ≤ a+1, backward attending only to S2's kept keys; lr 1e-5);
+- S2 + TTS stride 1 (S2 context; lr 1e-5).
+Dropped: window + TTS, C2 seed 1.
+
+**Budget:** this run capped at 9 A30-h from launch. Projection: T1 light ≈ 1.4 h, gate, T1 TTS ≈ 3.2–4.0 h,
+T2 ≈ 2.0 h (TTS stride 10 ≈ 0.2, hybrid ≈ 0.65, S2 + TTS stride 1 ≈ 0.85, teacher-forced passes ≈ 0.3), isolated
+timing + report + 10-min grace ≈ 0.35 h → **≈ 7.3 A30-h (range 6.5–8.3)**. Cut order if the projection goes over:
+S2 + TTS stride 1, then C2, then C1 (the driver re-projects before S2 + TTS stride 1 from the measured hybrid cost and
+skips it if elapsed + estimate + 0.35 h > 9 h). Never cut: baseline, window, S2, TTS stride 1, TTS stride 10, hybrid.
+
+**Statistics** (scripts/heldout_report.py): paired bootstrap over traces, stratified by dataset, same draw for all
+arms, 10,000 resamples, seed 0, 95% percentile CIs; τ = mean over AIME and LCB of pooled τ, decision variant (flagged
+traces truncated at loop onset; dropped traces excluded). On the 50 traces: window − base, S2 − base, TTS − base;
+R_window and R_S2 = ratio of mean gains (τ_arm − τ_base)/(τ_TTS − τ_base); S2 − window, S2 − C1, S2 − C2;
+S2 − TTS(stride 1). On the 16: hybrid − TTS(stride 1); (S2 + TTS stride 1) − S2 (also TTS stride 10 − stride 1,
+descriptive).
+
+**Claims (fixed now):**
+- Headline: **window R ≥ 0.5** (point estimate; CI reported).
+- **S2 adds value:** S2 − window ≥ 0.05 τ with CI excluding 0 (lower bound > 0), AND the CIs of S2 − C1 and S2 − C2
+  both exclude 0 (lower bounds > 0). If this fails, summary.md leads with the window.
+- **S2 dominates TTS:** lower CI bound of S2 − TTS(stride 1) ≥ 0.
+- **Hybrid:** hybrid − TTS(stride 1) has a CI above 0, at ≤ 10% of TTS(stride 1)'s mean update ms per round (both on
+  the 16 traces, each from a TTS process alone on the GPU). Note (from the probe above): expected to fail the cost
+  part as implemented (≈ 72%).
+- **Residual after S2:** (S2 + TTS stride 1) − S2, report only, no threshold.
+
+**Logging:** per-round update ms + grad/step flags for every TTS variant (full context vs S2 context); S2's extra
+target-side cost from bytes read (one query row vs the K cache of layers 17/25/33: 3 × 8 × 128 × 2 B × (t'−1) per
+round, at 933 GB/s), plus the microbenchmark; drafting ms from isolated runs (baseline, window, S2; one process alone;
+dev traces aime24_II_14 and lcb_abc393_d). τ, per-dataset τ, τ < 2K and τ ≥ 8K for every arm (also exclusion and
+loops-included variants).
+
+**When done:** report (results/heldout.md), held-out section at the top of summary.md, loop-check proposal
+(results/loop_check_proposal.md, not run), commit, push, 10-min grace (logs/heldout/HOLD extends it), pause via the
+JarvisLabs API (scripts/jl_pause.py; token read from /home/.jarvislabs_token, never printed/logged/committed;
+read-only API check passed for instance 534259). The driver retries a failed phase once with one worker; a hard stop
+or second failure → report what exists, commit, push, pause.

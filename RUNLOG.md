@@ -133,3 +133,27 @@ per round of update and a 1.45 GiB fp32 lm_head copy (+75 MB KL-linear state).
 **A30 session total (instance time incl. coding and idle, 08:41:09–10:38:09 UTC): 1.950 A30-h.** Old-GPU total stays 2.991 GPU-h.
 
 **Status:** T0b = target-guided selection adds value under the pre-registered rule → **S2 frozen** (W 1024 + prompt + 16 far chunks scored by target layers 17/25/33) and added to T1 and T2 alongside the window. GATE — held-out plan updated in results/heldout_proposal.md (≈ 6–7 A30-h, range 5.5–8); waiting for approval.
+
+**Pre-registered before any held-out run (2026-10-10 11:11 UTC): S2 dominance and the S2 + TTS hybrid (P3 arms).**
+- New arms on the same 16 test traces as S2 + TTS (8 AIME + 8 LCB, fixed seed, listed before the run):
+  (a) **TTS stride 10** (TTS paper protocol): one Adam step every 10 rounds with valid pairs, using only that latest
+  round's loss; lr = 3e-5, full context, stale cache (the TTS reference setting). (b) **S2 + TTS stride 10, pooled**:
+  drafter context = S2; one Adam step every 10 rounds on the summed loss of all 10 rounds' valid pairs (i ≤ a+1), each
+  round's term back-propagated under that round's S2 visible keys only (gradients accumulated in fp32 on the masters;
+  identical to back-propagating the pooled loss, since parameters are fixed within the 10 rounds); lr = 3e-5.
+  Implementation: rlsdk/adapters.py TTS(stride, pool, ctx), rlsdk/window.py grad_view; 10 CPU tests
+  (tests/test_tts_ctx.py), 102/102 tests pass.
+- Logged per round for every TTS variant: update_ms, grad (backward this round), step (Adam step this round);
+  reported separately for full-context TTS and S2-context TTS.
+- **Dominance claim (all 50 test traces):** Δ = τ_S2 − τ_TTS(stride 1), paired bootstrap 95% CI
+  (scripts/paired_bootstrap.py: traces resampled with replacement within dataset, same draw for both arms,
+  τ = mean of AIME and LCB pooled τ, decision variant, B = 10,000, seed 0, percentile interval).
+  **"S2 dominates TTS" if the CI lower bound is ≥ 0.**
+- **Hybrid claim (16 traces):** S2 + TTS(stride 10, pooled) beats TTS(stride 1) on τ with the paired-bootstrap 95% CI
+  excluding 0 (lower bound > 0), **and** its mean update ms per round is ≤ 10% of TTS(stride 1)'s (both measured in
+  the same run setup, mean over all rounds of the 16 traces).
+- Noted before running (A30 probe, aime24_II_14, first 1,200 rounds, scratch output): update ms/round — TTS stride 1
+  full context 58.0; TTS stride 10 full context 6.8 (58.1 on gradient rounds); S2 + TTS stride 1 55.7; S2 + TTS
+  stride 10 pooled 42.0. The per-round backward cost is nearly independent of context length, so the pooled
+  hybrid (a backward every round) is expected to fail the ≤ 10% cost criterion (42.0 / 58.0 = 72%) as implemented.
+  τ seen in the probe (one trace, 1,200 rounds): 4.121 / 4.023 / 4.124 / 4.207 in the same order.

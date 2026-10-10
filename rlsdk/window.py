@@ -167,3 +167,30 @@ class WindowCache:
         vv = torch.cat([self._visible(self.v[layer_idx]), v[:, :, n:]], dim=2)
         kk = (kk * self.cos) + (rotate_half(kk) * self.sin)  # dflash's key rotation, at the policy's positions
         return kk, vv
+
+
+class _GradView:
+    """Read-only view of a WindowCache for the TTS gradient forward of the current round: the visible keys are the
+    ones the round was drafted with (same kept set / far chunks / window, same positions); the round's new context
+    rows and the block come from the graph (with grad), older visible rows from the buffers (stale, no grad), as
+    `replay.PrefixCache` does for the stock cache. Nothing is written."""
+
+    def __init__(self, cache):
+        c = cache
+        n = c.n_new
+        vis = c.idx if c.idx is not None else torch.cat([torch.arange(0, c.k_hi, device=c.device),
+                                                         torch.arange(c.w_lo, c.start, device=c.device)])
+        tail = torch.arange(c.c0, c.start, device=c.device)
+        if vis.numel() < n or not torch.equal(vis[vis.numel() - n:], tail):
+            raise ValueError("the round's new context rows must be the tail of the visible set")
+        self.c, self.old = c, vis[:vis.numel() - n]
+
+    def update(self, k, v, layer_idx, cache_kwargs=None):
+        c = self.c
+        kk = torch.cat([c.k[layer_idx][:, :, :c.start].index_select(2, self.old), k], dim=2)
+        vv = torch.cat([c.v[layer_idx][:, :, :c.start].index_select(2, self.old), v], dim=2)
+        return (kk * c.cos) + (rotate_half(kk) * c.sin), vv
+
+
+def grad_view(cache):
+    return _GradView(cache)

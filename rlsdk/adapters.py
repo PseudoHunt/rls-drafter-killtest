@@ -274,10 +274,22 @@ def dflash_position_weights(n, gamma=7.0):
     return torch.tensor([math.exp(-(k - 1) / gamma) for k in range(1, n + 1)], dtype=torch.float32)
 
 
+TTS_CTX = {  # drafter context policies for TTS (P3 arms); same dicts as the frozen window / S2 arms
+    "window": {"W": 1024, "keep": "prompt", "positions": "contiguous"},
+    "s2": {"W": 1024, "keep": "prompt", "positions": "contiguous", "far": {"n": 16, "score": "mid3", "seed": 0}},
+}
+
+
 class TTS:
-    """One Adam step on all drafter parameters per round (§5.4).  fp32 master weights + Adam state;
-    the bf16 drafter used for drafting is refreshed from the masters after every step.  The actual
-    gradient computation needs the drafter graph, so `update` is driven by replay.py via `rnd`.
+    """Adam on all drafter parameters (§5.4).  fp32 master weights + Adam state; the bf16 drafter used for drafting
+    is refreshed from the masters after every step.  The actual gradient computation needs the drafter graph, so
+    `update` is driven by replay.py via `rnd`.
+
+    config: lr; refresh (stock cache only); stride k (default 1): one Adam step every k updates (rounds with valid
+    pairs); pool: False -> the step uses only the latest round's loss (no gradient on the other rounds); True -> the
+    step uses the summed loss of all k rounds' valid pairs (gradients accumulated in fp32 on the masters, each round's
+    term under that round's drafter context); ctx: None (full context) | "window" | "s2" (TTS_CTX): the drafter
+    drafts and back-propagates with that context policy only.
     """
 
     method = "tts"
@@ -287,6 +299,13 @@ class TTS:
         self.lr = float(config["lr"])
         self.refresh = bool(config.get("refresh", False))
         self.gamma = float(config.get("gamma", 7.0))
+        self.stride = int(config.get("stride", 1))
+        self.pool = bool(config.get("pool", False))
+        ctx = config.get("ctx")
+        if ctx is not None:
+            self.ctx_window = dict(TTS_CTX[ctx])
+            if self.refresh:
+                raise ValueError("refresh is implemented for the stock cache only")
 
     def bind(self, drafter, pristine_state):
         self.drafter = drafter
@@ -302,6 +321,16 @@ class TTS:
         self.opt = torch.optim.Adam(self.masters, lr=self.lr, betas=(0.9, 0.999),
                                     fused=self.masters[0].device.type == "cuda")
         self.weights = dflash_position_weights(16, self.gamma).to(device)
+        self.n_upd = 0
+        self.n_steps = 0
+        self._log = {}
+
+    def pop_round_log(self):
+        out, self._log = self._log, {}
+        return out
+
+    def diagnostics(self):
+        return {"stride": self.stride, "pool": self.pool, "n_updates": self.n_upd, "n_steps": self.n_steps}
 
     def finish(self):
         for p in self.params:
@@ -316,17 +345,26 @@ class TTS:
     def update(self, z, h, slots, rnd):
         """rnd.grad_forward() -> z with grad for slots 1..S; rnd.target_logits [m, V] fp32."""
         m = z.shape[0]
+        self.n_upd += 1
+        step_now = self.n_upd % self.stride == 0
+        if not (step_now or self.pool):
+            self._log = {"grad": 0, "step": 0}
+            return None
         prev_det = torch.are_deterministic_algorithms_enabled()
         torch.use_deterministic_algorithms(True)
         try:
-            loss = self._step(m, rnd)
+            loss = self._grad(m, rnd)
+            if step_now:
+                self._step()
         finally:
             torch.use_deterministic_algorithms(prev_det)
-        if self.refresh:
+        self._log = {"grad": 1, "step": int(step_now)}
+        if self.refresh and step_now:
             rnd.refresh_cache()
         return loss
 
-    def _step(self, m, rnd):
+    def _grad(self, m, rnd):
+        """Back-propagate this round's loss; accumulate into the fp32 master grads."""
         with torch.enable_grad():
             zg = rnd.grad_forward()[:m]
             q_logp = torch.log_softmax(rnd.draft_logits(zg).float(), dim=-1)
@@ -335,14 +373,19 @@ class TTS:
             loss = (self.weights[:m] * kl).sum()
             loss.backward()
         for p, mp in zip(self.params, self.masters):
-            mp.grad = None if p.grad is None else p.grad.float()
+            if p.grad is not None:
+                g = p.grad.float()
+                mp.grad = g if mp.grad is None else mp.grad + g
             p.grad = None
+        return float(loss.detach())
+
+    def _step(self):
         self.opt.step()
         self.opt.zero_grad(set_to_none=True)
+        self.n_steps += 1
         with torch.no_grad():
             for p, mp in zip(self.params, self.masters):
                 p.copy_(mp)
-        return float(loss.detach())
 
     def state_bytes(self):
         n = sum(p.numel() for p in self.masters)

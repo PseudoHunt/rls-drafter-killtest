@@ -16,7 +16,12 @@ T1 (all 50 test traces: 24 AIME, 26 LCB; 1 dropped by the loop rule → 49 in th
 T2 (16 test traces: 8 AIME + 8 LCB, drawn with a fixed seed and listed in RUNLOG before the run):
 5. window + TTS lr = 3e-5.
 6. **S2 + TTS lr = 3e-5.**
-**Needs code first** for 5–6: TTS's gradient forward reads the stock cache (`PrefixCache`); it needs a read-only
+P3 additions (2026-10-10, same 16 traces):
+7. **TTS stride 10** (full context, latest round's loss, one step every 10 rounds).
+8. **S2 + TTS stride 10, pooled** (S2 context; one step every 10 rounds on all 10 rounds' valid pairs).
+Pre-registered claims: RUNLOG.md (S2 dominance on 50 traces; hybrid on 16 traces).
+**Code for 5–8 is now written and tested** (rlsdk/window.py grad_view, TTS stride/pool/ctx; tests/test_tts_ctx.py).
+Previously: TTS's gradient forward reads the stock cache (`PrefixCache`); it needs a read-only
 WindowCache path (window and far chunks) + CPU tests (≈ 45–60 min of coding; can be done on a CPU instance to save
 A30 time).
 
@@ -40,8 +45,12 @@ Test outputs: 660,974 tokens (replays run on full traces; truncation is applied 
 | S2 | 661K / 4.2 ≈ 157K | ≈ 12 | 0.55 |
 | window + TTS (16 traces) | ≈ 212K / 5 ≈ 42K | ≈ 75 | ≈ 0.9 |
 | S2 + TTS (16 traces) | ≈ 212K / 5 ≈ 42K | ≈ 75 | ≈ 0.9 |
+| TTS stride 10 (16 traces) | ≈ 212K / 4.2 ≈ 50K | ≈ 15 (A30 probe: 7 draft + 6.8 update) | ≈ 0.25 |
+| S2 + TTS stride 10 pooled (16 traces) | ≈ 212K / 4.5 ≈ 47K | ≈ 50 (probe: 8 draft + 42 update) | ≈ 0.7 |
 | teacher-forced passes (+ attention summaries), model loads, report | | | ≈ 0.4 |
 
 TTS jobs (≈ 5.5–6.2 h) are the critical path; baseline, window and S2 run alongside on the light worker.
 **Projection (updated after T0b): ≈ 6–7 A30-h wall for the run, + ≈ 0.75 A30-h if the window/S2 + TTS code is
 written on the instance; range 5.5–8 A30-h** (main uncertainty: A30 TTS cost at long context).
+**With the P3 arms (2026-10-10, code already written): ≈ 7–8 A30-h wall, range 6.5–9** — over an 8 A30-h cap at the
+upper end. All four TTS-type 16-trace jobs share the single heavy slot (one TTS worker fits on 24 GB).

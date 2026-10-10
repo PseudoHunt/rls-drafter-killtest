@@ -105,7 +105,8 @@ def run_one(trace, method, cfg, target, drafter, pristine, tf, ids, nt, args, pa
 
 def attn_spec(plan, target):
     """Target attention summaries are computed in the teacher-forced pass only when a plan needs them (farsel)."""
-    if any(p["method"] == "farsel" and p.get("config", {}).get("score") != "random" for p in plan):
+    if any((p["method"] == "farsel" and p.get("config", {}).get("score") != "random")
+           or (p["method"] == "tts" and p.get("config", {}).get("ctx") == "s2") for p in plan):
         from .target_attn import default_spec
         return default_spec(target)
     return None

@@ -19,7 +19,7 @@ from dflash.model import (
 )
 
 from .guard import Frontier, Guarded
-from .window import WindowCache, deferred_key_rope, topk_attention
+from .window import WindowCache, deferred_key_rope, grad_view, topk_attention
 
 
 # ---------------------------------------------------------------------------
@@ -210,16 +210,22 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
 
                 def grad_forward():
                     # math SDPA: deterministic backward (fused SDPA kernels accumulate dQ/dK with atomics)
-                    with sdpa_kernel(SDPBackend.MATH):
+                    if win is None:
+                        with sdpa_kernel(SDPBackend.MATH):
+                            return drafter(target_hidden=th_rows, noise_embedding=noise, position_ids=pos,
+                                           past_key_values=PrefixCache(cache, prefix_len), use_cache=True,
+                                           )[:, 1 - verify_size:, :][0]
+                    # windowed / S2 context: attend only to the keys this round was drafted with
+                    with sdpa_kernel(SDPBackend.MATH), deferred_key_rope(), topk_attention(cache):
                         return drafter(target_hidden=th_rows, noise_embedding=noise, position_ids=pos,
-                                       past_key_values=PrefixCache(cache, prefix_len), use_cache=True,
+                                       past_key_values=grad_view(cache), use_cache=True,
                                        )[:, 1 - verify_size:, :][0]
 
                 rnd.grad_forward = grad_forward
                 rnd.draft_logits = lambda zz: drafter.compute_logits(zz[None], head)[0]
                 with torch.no_grad():
                     rnd.target_logits = head(h).float()
-                rnd.refresh_cache = lambda: rebuild_context_cache(drafter, cache, ctx[0:t])
+                rnd.refresh_cache = lambda: rebuild_context_cache(drafter, cache, ctx[0:t])  # stock cache only
             adapter.update(z[:m], h, slots[:m], rnd)
             update_ms = (_sync(device) - t1) * 1e3
 

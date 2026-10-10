@@ -1,0 +1,15 @@
+- method: window
+  config:
+    W: 1024
+    keep: prompt
+- method: farsel
+  config:
+    W: 1024
+    keep: prompt
+    n: 16
+    score: mid3
+- method: vpa
+  config:
+    M: 64
+    beta: 0.0
+    lam: 0.0

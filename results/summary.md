@@ -15,6 +15,17 @@
 Full report: `results/heldout.md` (stage: done).
 
 <!-- HELDOUT END -->
+
+<!-- VPA BEGIN -->
+
+## Verifier-Prior Attention (VPA; dev-tuned, stage: not promoted)
+
+- Screen (4 reference traces): best = M=64_beta=0.0_lam=0.0, τ = 4.172 (S2 4.231, window 4.085).
+- Confirmation (7 dev traces): VPA − S2 = -0.049 (need ≥ +0.05), VPA ≥ S2 on 1/7 (need ≥ 75%) → **not promoted**.
+
+Full report: `results/vpa.md`.
+
+<!-- VPA END -->
 ## Decision
 
 **RLS = STOP (futility rule §12.6).** On the dev set (flagged traces truncated, mean of AIME and LCB) every RLS and hidden-residual bias config is below the baseline: baseline τ = 3.028, best RLS (n0 = 128, λ = 0.9999) τ = 2.739, best hidden-residual bias (ρ = 0.999) τ = 2.304. Dev R of the best RLS config is negative, so Stage 4 (held-out test) was not run.

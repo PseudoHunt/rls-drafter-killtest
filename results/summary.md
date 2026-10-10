@@ -95,3 +95,22 @@ Pre-registered rule (RUNLOG.md, A30 session): best arm R ≥ 0.5 promising, R < 
 KL-bias: α = 0.01, R = +0.02; α = 0.025 is below the baseline (R = −0.12). Measured cost: 7–9 ms per round of
 update (vs ≈ 11 ms drafting), plus a 1.45 GiB fp32 copy of the lm_head weight; KL-linear state 75 MB. Full table:
 `results/screen.md`.
+
+## Windowed drafter context (A30, 4 TTS-reference traces) = promising
+
+Training-free: the drafter attends to a kept set + the last W committed context positions, contiguous position ids
+inside the kept cache (StreamingLLM-style; NOTES.md §9). Target and verification unchanged. Pre-registered in RUNLOG.md.
+
+| config | τ mean | R | τ <2K | τ ≥8K | draft ms/round |
+|---|---|---|---|---|---|
+| baseline | 3.016 | 0 | 3.271 | 2.655 | 12.00 |
+| W = 1024, keep 64 | 4.037 | +0.862 | 3.230 | 4.483 | 10.73 |
+| **W = 1024, keep prompt** | **4.085** | **+0.903** | 3.246 | 4.535 | 11.58 |
+| W = 4096, keep 64 | 4.015 | +0.844 | 3.271 | 4.436 | 12.44 |
+| W = 4096, keep prompt | 3.996 | +0.828 | 3.271 | 4.383 | 12.55 |
+
+**Best R = +0.90 → promising** (pre-registered: plan a full held-out test). τ for output positions < 2K is unchanged
+(the window is barely active there), while τ ≥ 8K rises from 2.655 to 4.4–4.5: the long-output decay on these traces
+is mostly a long-context effect inside the drafter. All 4 configs land at R = 0.83–0.90, so the selection optimism
+from tuning on the same 4 traces is small; the evidence is still only 4 traces (2 AIME, 2 LCB). gain_TTS is the
+old-GPU TTS gain, used as a yardstick. Full table: `results/window.md`.

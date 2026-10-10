@@ -62,3 +62,14 @@ per round of update and a 1.45 GiB fp32 lm_head copy (+75 MB KL-linear state).
   fits, equals a fresh forward on the visible rows otherwise); real model on lcb_abc393_d with W = 1e6: 2,675/2,675
   rounds identical to the A30 baseline. One look at the data before pre-registering: W = 1024, keep 64 on
   lcb_abc393_d alone gave τ = 3.588 (a smoke test of the code path; it is part of the grid and is re-run there).
+
+| # | start (UTC) | end (UTC) | command | A30-h | cum A30-h | note |
+|---|---|---|---|---|---|---|
+| 16 | 2026-10-10 09:15:38 | 09:21:16 | instance idle (awaiting instructions) | 0.094 | 0.662 | counted: instance was running |
+| 17 | 2026-10-10 09:21:16 | 09:30:36 | coding on the instance: KL STOP recorded, NOTES §9 (DFlash RoPE), rlsdk/window.py + 9 CPU tests (63/63 pass), GPU check W = 1e6 on lcb_abc393_d (bit-identical to baseline), tiny dry-runs, pre-registration | 0.156 | 0.817 | smoke test W = 1024 keep 64 on lcb_abc393_d: τ = 3.588 (seen before pre-registering; disclosed there) |
+| 18 | 2026-10-10 09:30:36 | 09:36:40 | `SCREEN=window WORKERS=3 bash scripts/run_screen.sh` (baseline + 4 window configs × 4 traces) | 0.101 | 0.919 | best = W 1024, keep prompt: τ = 4.085, R = +0.903 → **promising**; τ ≥8K 2.655 → 4.535, τ <2K unchanged |
+| 19 | 2026-10-10 09:36:40 | 09:37:02 | wrap-up: summary.md, RUNLOG, commit/push | 0.006 | 0.925 | instance still running; pause by hand |
+
+**A30 session total (instance time incl. coding and idle, 08:41:09–09:37:02 UTC): 0.931 A30-h.** Old-GPU total stays 2.991 GPU-h.
+
+**Status:** KL screen = STOP. Windowed-context test = **promising** (best R = +0.90, pre-registered rule): per that rule, the next step is a full held-out test (not run). See results/window.md.

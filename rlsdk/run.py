@@ -14,11 +14,11 @@ import time
 import torch
 import yaml
 
-from .adapters import RLS, TTS, Baseline, Bias, CtxPolicy, FarSel, KLBias, KLLinear, Window
+from .adapters import RLS, TTS, Baseline, Bias, CtxPolicy, FarSel, KLBias, KLLinear, VPA, Window
 from .replay import near_tie_rate, simulate, teacher_forced
 
 METHODS = {"baseline": Baseline, "bias": Bias, "rls": RLS, "rls_slot": RLS, "tts": TTS,
-           "klbias": KLBias, "kllinear": KLLinear, "window": Window, "farsel": FarSel}
+           "klbias": KLBias, "kllinear": KLLinear, "window": Window, "farsel": FarSel, "vpa": VPA}
 
 
 def config_name(cfg):
@@ -105,9 +105,12 @@ def run_one(trace, method, cfg, target, drafter, pristine, tf, ids, nt, args, pa
 
 def attn_spec(plan, target):
     """Target attention summaries are computed in the teacher-forced pass only when a plan needs them (farsel)."""
+    from .target_attn import default_spec
+    if any(p["method"] == "vpa" for p in plan):
+        spec = default_spec(target)
+        return {**spec, "qk": spec["mid3"]}
     if any((p["method"] == "farsel" and p.get("config", {}).get("score") != "random")
            or (p["method"] == "tts" and p.get("config", {}).get("ctx") == "s2") for p in plan):
-        from .target_attn import default_spec
         return default_spec(target)
     return None
 

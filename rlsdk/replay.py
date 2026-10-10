@@ -36,10 +36,13 @@ def teacher_forced(target, ids, layer_ids, chunk=2048, attn_spec=None):
     key chunk} (rlsdk/target_attn.py), for target-guided context selection.
     """
     if attn_spec:
-        from .target_attn import AttnCapture, summaries
+        from .target_attn import AttnCapture, qk_store, summaries
         with AttnCapture(target, sorted({l for ls in attn_spec.values() for l in ls})) as cap:
             tf = teacher_forced(target, ids, layer_ids, chunk)
         tf.attn = summaries(target, cap.inputs, attn_spec)
+        if "qk" in attn_spec:  # VPA: per-key target attention mass at t'-1, computed per round
+            tf.qk = qk_store(target, cap.inputs, attn_spec["qk"])
+            tf.qk["scaling"] = target.model.layers[attn_spec["qk"][0]].self_attn.scaling
         return tf
     captured = {}
     hooks = []
@@ -147,6 +150,9 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
             f = win["far"]
             src = None if f["score"] == "random" else Guarded(tf.attn[f["score"]], frontier, f"attn_{f['score']}")
             far = {"n": f["n"], "chunk": f.get("chunk", 32), "score": src, "seed": f.get("seed", 0)}
+            if f.get("vpa"):  # Verifier-Prior Attention bias (NOTES.md §12)
+                far["vpa"] = {**f["vpa"], "q": Guarded(tf.qk["q"], frontier, "qk_q"),
+                              "k": Guarded(tf.qk["k"], frontier, "qk_k"), "scaling": tf.qk["scaling"]}
         cache = WindowCache(drafter, keep, win.get("W"), T, device, next(drafter.parameters()).dtype,
                             positions=win.get("positions", "contiguous"), cap=win.get("cap"), topk=win.get("topk"),
                             shared=win.get("shared", False), far=far)

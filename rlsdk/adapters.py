@@ -62,6 +62,24 @@ class FarSel(Baseline):
                            "far": {"n": int(config["n"]), "score": config["score"], "seed": int(config.get("seed", 0))}}
 
 
+class VPA(Baseline):
+    """Verifier-Prior Attention (NOTES.md §12): S2-style kept context (prompt + last W0 + top M far chunks by the
+    target layers 17/25/33 signal) plus an additive bias on the kept context keys' attention logits.
+    config: M, beta, lam, W0 (default 1024), keep (default "prompt"), b_offset (tests only)."""
+
+    method = "vpa"
+
+    def __init__(self, config):
+        super().__init__(config)
+        keep = config.get("keep", "prompt")
+        W0 = int(config.get("W0", 1024))
+        vpa = {"beta": float(config["beta"]), "lam": float(config["lam"]), "W0": W0}
+        if "b_offset" in config:
+            vpa["b_offset"] = float(config["b_offset"])
+        self.ctx_window = {"W": W0, "keep": keep if keep == "prompt" else int(keep), "positions": "contiguous",
+                           "far": {"n": int(config["M"]), "score": "mid3", "seed": 0, "vpa": vpa}}
+
+
 class CtxPolicy(Baseline):
     """No adaptation; drafter context policy (rlsdk/window.py, NOTES.md §10). The method name sets the mechanism:
       winorig     kept set + last W positions, original position ids        config: W, keep

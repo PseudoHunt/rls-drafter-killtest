@@ -38,3 +38,10 @@ Venvs live on local disk at `/home/envs/{env-dflash,env-vllm}` (rebuild: `uv ven
 | # | start (UTC) | end (UTC) | command | A30-h | cum A30-h | note |
 |---|---|---|---|---|---|---|
 | 12 | 2026-10-10 08:41:34 | 08:44:26 | `rlsdk.pool` baseline on the 4 reference traces → `results/raw_a30` (3 workers, MPS) | 0.048 | 0.048 | τ = 3.016 (old GPU 3.017); per-round trajectories diverge early (bf16 numerics, as in Stage 2) |
+| 13 | 2026-10-10 08:44:26 | 08:54:10 | coding on the instance: KL arms + 14 CPU tests (54/54 pass), slot_accept.py, summary.md, run_screen.sh, real-model memory probe (400 rounds), tiny dry-runs ×2, stale-copy check + delete | 0.162 | 0.210 | probe: 1 worker peaks 13.4 GB (TF pass), ~5.5 GB steady → 2 workers |
+| 14 | 2026-10-10 08:54:10 | 09:15:25 | `bash scripts/run_screen.sh` (6 configs × 4 traces, 2 workers, MPS) | 0.354 | 0.564 | best = KL-linear lr=1e-6 τ = 3.162, R = +0.123 → **stop this line** |
+| 15 | 2026-10-10 09:15:25 | 09:15:38 | wrap-up: RUNLOG, commit/push | 0.004 | 0.568 | instance still running; pause by hand |
+
+**A30 session total (instance time incl. coding, 08:41:09–09:15:38 UTC): 0.575 A30-h** (the 25 s before row 12 was resume.sh). Old-GPU total stays 2.991 GPU-h.
+
+**Status:** screen decision = **stop this line** (pre-registered rule; best R = +0.123 < 0.25, optimistic since tuned on the same 4 traces). KL-linear lr = 1e-5 crossed ‖Az̃‖/‖z‖ > 0.2 in 34 rounds (max 0.209). See results/screen.md.

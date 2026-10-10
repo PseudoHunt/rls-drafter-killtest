@@ -102,7 +102,7 @@ def repeat_fraction(output_ids, window=32):
 
 
 def loop_cut(output_ids, window=32, onset_thr=0.8, min_back=512, max_frac=0.35, step=512, min_keep=1024,
-             onset="suffix", onset_win=1024):
+             onset="window", onset_win=1000):
     """Amendment 2 (KILL_TEST_BRIEF.md §11) truncation rule for loop-flagged traces.
 
     r_j = 1 if the 32-token window ending at output position j occurred earlier (j >= 31; else 0).

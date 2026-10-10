@@ -69,7 +69,8 @@ def run_one(trace, method, cfg, target, drafter, pristine, tf, ids, nt, args, pa
             time.sleep(sleep)
 
     t0 = time.time()
-    rounds = simulate(drafter, target, ids, trace["prompt_len"], tf, ad, args.max_new_tokens, on_round=on_round)
+    rounds = simulate(drafter, target, ids, trace["prompt_len"], tf, ad, args.max_new_tokens, on_round=on_round,
+                      max_rounds=getattr(args, "max_rounds", None))
     state_bytes = ad.state_bytes()
     diag = ad.diagnostics() if hasattr(ad, "diagnostics") else {}
     if method == "tts":
@@ -96,6 +97,16 @@ def run_one(trace, method, cfg, target, drafter, pristine, tf, ids, nt, args, pa
     return summ
 
 
+class NearTieStop(SystemExit):
+    pass
+
+
+def check_near_tie(trace_id, nt, limit):
+    if nt > limit:
+        print(f"[{trace_id}] HARD STOP near-tie rate {nt:.4%} > {limit:.2%}", flush=True)
+        raise NearTieStop(3)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--traces", required=True)
@@ -108,7 +119,8 @@ def main(argv=None):
     ap.add_argument("--draft", default="z-lab/Qwen3-4B-DFlash-b16")
     ap.add_argument("--tiny", action="store_true")
     ap.add_argument("--device", default="cuda")
-    ap.add_argument("--near-tie-max", type=float, default=0.01)
+    ap.add_argument("--near-tie-max", type=float, default=0.03, help="hard stop (Amendment §12.2)")
+    ap.add_argument("--max-rounds", type=int, default=None, help="benchmark only")
     args = ap.parse_args(argv)
 
     torch.backends.cuda.matmul.allow_tf32 = False
@@ -132,8 +144,7 @@ def main(argv=None):
         tf = teacher_forced(target, ids, drafter.target_layer_ids)
         nt = near_tie_rate(tf.argmax, ids, trace["prompt_len"])
         print(f"[{trace['trace_id']}] T={ids.shape[0]} tf_pass={time.time() - t0:.1f}s near_tie={nt:.4%}", flush=True)
-        if nt > args.near_tie_max:
-            print(f"[{trace['trace_id']}] WARNING near-tie rate {nt:.4%} above {args.near_tie_max:.2%}", flush=True)
+        check_near_tie(trace["trace_id"], nt, args.near_tie_max)
         for method, cfg in todo:
             path = out_path(args.out, trace["trace_id"], method, cfg)
             s = run_one(trace, method, cfg, target, drafter, pristine, tf, ids, nt, args, path)

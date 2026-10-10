@@ -310,3 +310,27 @@ checks it against a real truncated replay.
 Open issue raised at Gate B (pending decision; implemented exactly as specified until then): for early-onset loops
 the suffix mean from p = 0 already reaches 0.8, so step 2 gives p* = 0 and the trace is dropped even though the loop
 starts ~1–3K tokens in. A 1K-window onset variant is listed in `results/loop_cuts_proposed_window.csv` for comparison.
+
+## 12. Amendments (Gate B, 2026-10-10, before any dev/test method results)
+
+1. **Replay validation** replaces the "≥ 98% rounds identical" test with: (a) 100% round match when replaying with the
+   real run's recorded context features (done: `results/rvr_diag_aime24_II_09.json`); (b) pooled mean-τ error ≤ 1%
+   (done: 0.41%). The three per-trace τ errors are all negative (−0.18%, −1.03%, −0.15%): a **known ~−0.5% replay
+   bias** (pessimistic), shared by all methods, so it should cancel in R.
+   **Borderline rule:** if R lands within ±0.05 of 0.25 or 0.50, report it as borderline rather than as a clear band.
+2. **Near-tie rate:** report-only, logged for every trace. Hard stop at 3% (that would point to a tokenization or
+   template bug, not numerics).
+3. **Budget:** approved to run concurrent replay workers under NVIDIA MPS and to use fused Adam for TTS (same maths).
+   Benchmark first (~0.1 GPU-h): one config run both alone and under MPS must give identical per-round logs
+   (timing fields excluded). Timing columns in `summary.md` come from isolated runs on 2 dev traces. Proceed only if
+   the re-projected total is ≤ 8 GPU-h; otherwise stop and ask. No grid cuts.
+4. **Loop onset (bug fix to Amendment 2, step 2):** onset p* = the first position such that every following
+   1,000-token window (r_q..r_{q+999}, truncated at the end of the trace) has mean ≥ 0.8. Steps 3–6 are unchanged.
+   Only the new rule is reported (`results/loop_cuts.csv`). The old rule's cuts stay in the repo for the record
+   (`results/loop_cuts_suffix_rule.csv`).
+5. **σ²** is estimated from the baseline dev runs before any RLS cell runs, and written into the configs. No RLS
+   result counts before that.
+6. **Futility stop at Gate C:** if the best RLS config's dev R < 0.15, the decision is STOP and Stage 4 is skipped
+   (dev R is optimistic because configs are selected on dev).
+7. **If the final decision is GO:** before reporting anything, run baseline, frozen RLS and frozen TTS in the real
+   (non-replay) loop on 3 dev traces to confirm the direction. Not in the current budget; ask first.

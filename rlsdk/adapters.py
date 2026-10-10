@@ -253,7 +253,9 @@ class TTS:
         for p in self.params:
             p.requires_grad_(True)
         self.masters = [p.detach().float().clone() for p in self.params]
-        self.opt = torch.optim.Adam(self.masters, lr=self.lr, betas=(0.9, 0.999))
+        # fused Adam on CUDA (Amendment §12.3): same update rule, one kernel
+        self.opt = torch.optim.Adam(self.masters, lr=self.lr, betas=(0.9, 0.999),
+                                    fused=self.masters[0].device.type == "cuda")
         self.weights = dflash_position_weights(16, self.gamma).to(device)
 
     def finish(self):

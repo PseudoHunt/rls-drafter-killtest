@@ -1,5 +1,5 @@
 trace_id,dataset,split,n_out,p_star,period,c,kept,frac_kept,dropped
-aime24_II_02,aime,dev,16384,0,25,-512,0,0.0,True
+aime24_II_02,aime,dev,16384,521,25,9,0,0.0,True
 aime24_II_09,aime,dev,2236,,,1724,1724,0.3417569193742479,False
-aime24_II_13,aime,dev,16384,0,120,-512,0,0.0,True
-aime24_I_10,aime,dev,16384,3123,550,2573,2573,0.0,False
+aime24_II_13,aime,dev,16384,519,241,7,0,0.0,True
+aime24_I_10,aime,dev,16384,7040,1198,5842,5842,0.3346020761245675,False

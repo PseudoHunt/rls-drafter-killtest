@@ -1,0 +1,2 @@
+# benchmark only (placeholder sigma2)
+- {method: rls, config: {n0: 128, lam: 0.999, sigma2: 1.0}}

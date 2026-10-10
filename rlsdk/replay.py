@@ -108,7 +108,7 @@ def _sync(device):
 # ---------------------------------------------------------------------------
 
 def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, block_size=None,
-             on_round=None, round_hook=None):
+             on_round=None, round_hook=None, max_rounds=None):
     """Replay DFlash greedy rounds over the committed trace `ids` (1-D, prompt + continuation).
 
     Returns list of per-round dicts.  `round_hook(rnd)` (tests) is called after verification with the
@@ -133,7 +133,7 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
     rounds = []
     start, c0 = P, 0  # c0: first context position not yet fed to the drafter
     r = 0
-    while start + 1 < max_length and start < end:
+    while start + 1 < max_length and start < end and (max_rounds is None or r < max_rounds):
         verify_size = min(block_size, max_length - start)
         n_slots = verify_size - 1
         t0 = _sync(device)

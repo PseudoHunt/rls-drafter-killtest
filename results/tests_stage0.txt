@@ -1,0 +1,35 @@
+cachedir: .pytest_cache
+rootdir: /home/jl_fs/rls_drafter_killtest
+plugins: anyio-4.15.1
+collecting ... collected 28 items
+
+tests/test_replay.py::test_hook_features_match_output_hidden_states PASSED                                                                                                      [  3%]
+tests/test_replay.py::test_replay_equals_real_speculative_loop[None-0] PASSED                                                                                                   [  7%]
+tests/test_replay.py::test_replay_equals_real_speculative_loop[None-1] PASSED                                                                                                   [ 10%]
+tests/test_replay.py::test_replay_equals_real_speculative_loop[None-2] PASSED                                                                                                   [ 14%]
+tests/test_replay.py::test_replay_equals_real_speculative_loop[stop1-0] PASSED                                                                                                  [ 17%]
+tests/test_replay.py::test_replay_equals_real_speculative_loop[stop1-1] PASSED                                                                                                  [ 21%]
+tests/test_replay.py::test_replay_equals_real_speculative_loop[stop1-2] PASSED                                                                                                  [ 25%]
+tests/test_replay.py::test_rls_at_M0_reproduces_baseline_bit_exact[decay-dtype0] PASSED                                                                                         [ 28%]
+tests/test_replay.py::test_rls_at_M0_reproduces_baseline_bit_exact[decay-dtype1] PASSED                                                                                         [ 32%]
+tests/test_replay.py::test_rls_at_M0_reproduces_baseline_bit_exact[fixed-dtype0] PASSED                                                                                         [ 35%]
+tests/test_replay.py::test_rls_at_M0_reproduces_baseline_bit_exact[fixed-dtype1] PASSED                                                                                         [ 39%]
+tests/test_replay.py::test_guard_raises_on_planted_read PASSED                                                                                                                  [ 42%]
+tests/test_replay.py::test_guard_in_replay_blocks_lookahead PASSED                                                                                                              [ 46%]
+tests/test_replay.py::test_rebuild_cache_matches_incremental PASSED                                                                                                             [ 50%]
+tests/test_replay.py::test_tts_runs_and_changes_drafts[False] PASSED                                                                                                            [ 53%]
+tests/test_replay.py::test_tts_runs_and_changes_drafts[True] PASSED                                                                                                             [ 57%]
+tests/test_replay.py::test_bias_and_rls_change_drafts PASSED                                                                                                                    [ 60%]
+tests/test_resume.py::test_kill_and_resume PASSED                                                                                                                               [ 64%]
+tests/test_rls.py::test_rls_matches_weighted_ridge[0.98-decay] PASSED                                                                                                           [ 67%]
+tests/test_rls.py::test_rls_matches_weighted_ridge[0.98-fixed] PASSED                                                                                                           [ 71%]
+tests/test_rls.py::test_rls_matches_weighted_ridge[0.999-decay] PASSED                                                                                                          [ 75%]
+tests/test_rls.py::test_rls_matches_weighted_ridge[0.999-fixed] PASSED                                                                                                          [ 78%]
+tests/test_rls.py::test_rls_matches_weighted_ridge[1.0-decay] PASSED                                                                                                            [ 82%]
+tests/test_rls.py::test_rls_matches_weighted_ridge[1.0-fixed] PASSED                                                                                                            [ 85%]
+tests/test_rls.py::test_rls_apply_equals_M_ztilde[decay] PASSED                                                                                                                 [ 89%]
+tests/test_rls.py::test_rls_apply_equals_M_ztilde[fixed] PASSED                                                                                                                 [ 92%]
+tests/test_rls.py::test_per_slot_rls_routes_groups PASSED                                                                                                                       [ 96%]
+tests/test_rls.py::test_bias_is_exponentially_weighted_mean PASSED                                                                                                              [100%]
+
+============================================================================ 28 passed in 83.54s (0:01:23) ============================================================================

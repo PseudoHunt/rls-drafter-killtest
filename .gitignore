@@ -5,3 +5,5 @@ traces/*.pt
 __pycache__/
 *.tmp
 .pytest_cache/
+ext/
+traces/

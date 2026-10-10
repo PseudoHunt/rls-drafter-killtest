@@ -230,3 +230,42 @@ or second failure → report what exists, commit, push, pause.
 | 31b | 2026-10-10 11:19:34 | 11:26:46 | T0 report, JarvisLabs SDK (env-jl) + read-only API check, held-out driver + report + bootstrap, tiny dry-runs ×2 (gate-stop and full path), T2 trace draw, pre-registration | 0.120 | 2.754 |  |
 
 **Before held-out launch: session total 2.760 A30-h. The held-out run (row 32, written by the driver) is capped at 9 A30-h from its own start.**
+
+## Addendum to the held-out plan — PRE-REGISTERED (2026-10-10 11:34 UTC; held-out run already in T1, unaffected)
+
+**A. Hybrid cost claim — amortized.** The cost comparison uses amortized update ms per round = total update time ÷
+total rounds (a stride-10 run is charged for its one update spread over 10 rounds). This is the "update ms/round"
+column of scripts/heldout_report.py (mean of per-round update_ms over all rounds, including rounds without a
+backward); the pooled hybrid does a backward every round, so its amortized cost includes all of them.
+
+**B. Verifier-Prior Attention (VPA)** — runs after T2; tuned on dev only.
+- Kept context: prompt + last W0 = 1024 positions + top M far 32-token chunks, chosen by the same signal as S2 (target
+  layers 17/25/33, last committed query t'−1, summed over heads; chunk ranking = S2's chunk scores). Kept keys
+  renumbered contiguously in original order (as S2).
+- Bias on the drafter's attention logits for kept CONTEXT keys only (all drafter layers and heads; block keys 0):
+  b_j = β·log(m_j + ε) − λ·log(1 + max(0, d_j − W0)/W0), m_j = target attention mass on context position j (row t'−1,
+  summed over the 32 heads, mean over layers 17/25/33, normalized to sum 1 over all context positions 0..t'−1; computed
+  each round from the target's q row and K cache, read through the leakage guard), ε = 1/N_ctx (N_ctx = t'), d_j = t' − p_j
+  (original distance from the anchor t' to key j); prompt and recent-window keys get no distance term. b is centered
+  over the kept context keys (mean subtracted).
+- Unit tests: β = λ = 0, M = 16 → S2 bit-exact; β = λ = 0, M = 0 → window bit-exact; adding a constant to b changes
+  nothing; block keys never biased (plus: m_j = eager attention mass; biased forward = fresh forward with the same
+  additive mask).
+- Step 1 (screen, 4 reference traces): M = 64 × (β, λ) ∈ {(0,0), (0.5,0), (0.5,0.5), (0.5,1), (1,0), (1,0.5), (1,1)};
+  pick the best by mean τ (decision variant, mean of AIME and LCB pooled τ).
+- Step 2 (confirm, the 7 remaining non-dropped dev traces: aime24_II_02, aime24_II_09, aime24_II_13, aime24_I_13,
+  lcb_3701, lcb_arc193_d, lcb_arc195_c): window, S2 and the chosen VPA config. **Promote VPA to test only if**
+  VPA − S2 ≥ +0.05 τ (mean) AND VPA ≥ S2 (per-trace τ, decision variant) on ≥ 75% of the 7 traces (≥ 6 of 7).
+  If promoted: freeze the config in configs/frozen.yaml and commit it before any test run.
+- **T3 (only if promoted):** VPA on all 50 test traces; paired bootstrap 95% CIs (same procedure as the held-out
+  report) for VPA − S2, VPA − window, VPA − TTS(stride 1). Claims: "VPA improves on S2" if the CI for VPA − S2
+  excludes 0; "VPA dominates TTS" if the lower CI bound of VPA − TTS(stride 1) ≥ 0.
+- If not promoted: report the dev results as is (window and S2 are limits of the VPA family).
+- Budget: ≈ 1 A30-h for steps 1–2, ≈ 0.5 for T3, separate from the 9 A30-h held-out cap. Unattended rule: if the
+  projection exceeds 2 A30-h, stop before the next step, report, commit, push and pause (instead of asking).
+- Reported per config: τ, τ AIME, τ LCB, τ ≥ 8K, drafting ms/round. VPA results go into summary.md after the
+  held-out section.
+- Execution: VPA code is developed in a separate worktree (branch vpa) so the running held-out test imports
+  unchanged code; scripts/run_vpa.sh waits for the held-out driver to commit and push (GRACE), takes over the pause,
+  merges branch vpa, runs steps 1–2 (+ T3 if promoted), reports, commits, pushes and pauses via the API. It runs only
+  if the held-out run completed (not after a gate stop or failure).

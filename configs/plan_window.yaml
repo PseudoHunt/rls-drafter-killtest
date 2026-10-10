@@ -1,0 +1,17 @@
+- method: baseline
+- method: window
+  config:
+    W: 1024
+    keep: 64
+- method: window
+  config:
+    W: 1024
+    keep: prompt
+- method: window
+  config:
+    W: 4096
+    keep: 64
+- method: window
+  config:
+    W: 4096
+    keep: prompt

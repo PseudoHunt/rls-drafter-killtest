@@ -1,0 +1,2 @@
+- {method: tts, config: {lr: 1.0e-05, stride: 10}}
+- {method: tts, config: {lr: 1.0e-05, ctx: s2, stride: 10, pool: true}}

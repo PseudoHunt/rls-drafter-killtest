@@ -1,5 +1,20 @@
 # Kill test summary: closed-form (RLS) test-time drafter adaptation vs TTS
 
+<!-- HELDOUT BEGIN -->
+
+## Held-out test (A30, 49 test traces) — leads with S2 and the window
+
+- **Window (W 1024 + prompt): R = 0.718** [0.688, 0.743]; window − base +0.795 [+0.695, +0.870].
+- S2: R = 0.874 [0.845, 0.900].
+- Headline: window R ≥ 0.5: R = 0.718 → **YES**
+- S2 adds value: S2 − window ≥ 0.05 with CI > 0, and CIs of S2 − C1, S2 − C2 exclude 0 (above): +0.173 [+0.150, +0.195]; C1 +0.106 [+0.089, +0.123]; C2 +0.110 [+0.092, +0.127] → **YES**
+- S2 dominates TTS: lower CI bound of S2 − TTS(stride 1) ≥ 0: -0.139 [-0.173, -0.107] → **NO**
+- Hybrid: hybrid − TTS(stride 1) CI above 0, at ≤ 10% of TTS(stride 1)'s update ms/round (16 traces): +0.130 [+0.063, +0.176]; update ms ratio = 43.0/69.6 = 61.8% → **NO**
+- Residual after S2 (report only): +0.491 [+0.421, +0.558]
+
+Full report: `results/heldout.md` (stage: done).
+
+<!-- HELDOUT END -->
 ## Decision
 
 **RLS = STOP (futility rule §12.6).** On the dev set (flagged traces truncated, mean of AIME and LCB) every RLS and hidden-residual bias config is below the baseline: baseline τ = 3.028, best RLS (n0 = 128, λ = 0.9999) τ = 2.739, best hidden-residual bias (ρ = 0.999) τ = 2.304. Dev R of the best RLS config is negative, so Stage 4 (held-out test) was not run.

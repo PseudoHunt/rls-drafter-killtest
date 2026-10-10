@@ -269,3 +269,7 @@ backward); the pooled hybrid does a backward every round, so its amortized cost 
   unchanged code; scripts/run_vpa.sh waits for the held-out driver to commit and push (GRACE), takes over the pause,
   merges branch vpa, runs steps 1–2 (+ T3 if promoted), reports, commits, pushes and pauses via the API. It runs only
   if the held-out run completed (not after a gate stop or failure).
+
+| # | start (UTC) | end (UTC) | command | A30-h | note |
+|---|---|---|---|---|---|
+| 32 | 2026-10-10 11:26:54 | 17:04:28 (before grace + pause) | `bash scripts/run_heldout.sh` | 5.626 | complete; phases: t1_light rc=0 elapsed_h=1.059;t1_tts rc=0 elapsed_h=4.051;t2a rc=0 elapsed_h=4.856;t2b rc=0 elapsed_h=5.574;iso rc=0 elapsed_h=5.622; |

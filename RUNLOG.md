@@ -277,3 +277,13 @@ backward); the pooled hybrid does a backward every round, so its amortized cost 
 | # | start (UTC) | end (UTC) | command | A30-h | note |
 |---|---|---|---|---|---|
 | 33 | 2026-10-10 17:05:15 | 17:29:05 (before grace + pause) | `bash scripts/run_vpa.sh` | 0.397 | not promoted |
+
+Row 33 note: the driver's own commit failed (a git-add pathspec for absent T3 files matched nothing); the VPA files were
+committed by hand at 17:29:38 UTC (fe5ca9f) during the grace window.
+
+**A30 session total: 08:41:09 → 17:29:38 UTC = 8.808 A30-h, plus the ≈ 10-min VPA grace before the API pause
+(≈ 8.98 A30-h at pause).** Held-out run 5.626 A30-h (cap 9); VPA 0.397 A30-h (budget 2). Old-GPU total stays 2.991 GPU-h.
+
+**Final status:** held-out claims — headline window R = 0.718 ≥ 0.5 YES; S2 adds value YES; S2 dominates TTS NO
+(S2 − TTS −0.139 [−0.173, −0.107]); hybrid NO (τ +0.130 [+0.063, +0.176] but update cost 61.8% > 10%). VPA not
+promoted (bias hurt monotonically; VPA − S2 = −0.049 on dev, 1/7 traces). Loop-check proposal: results/loop_check_proposal.md (not run).

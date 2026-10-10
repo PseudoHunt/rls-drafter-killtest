@@ -100,6 +100,9 @@ finish() {  # commit, push, grace period, pause
     /home/envs/env-jl/bin/python scripts/jl_pause.py --check || echo "JL check failed"
     echo "HELDOUT_DONE (dry)"; exit 0
   fi
+  E=$(date -u +%H:%M:%S); S0=$(date -u -d @$START +%H:%M:%S)
+  printf '\n| # | start (UTC) | end (UTC) | command | A30-h | note |\n|---|---|---|---|---|---|\n| 32 | 2026-10-10 %s | %s (before grace + pause) | `bash scripts/run_heldout.sh` | %s | %s; phases: %s |\n' \
+      "$S0" "$E" "$(elapsed_h)" "$1" "$(grep -h '^PHASE_END\|^CUT' $LOGS/driver.log 2>/dev/null | awk '{print $2, $4, $NF}' | tr '\n' ';')" >> RUNLOG.md
   git add results/heldout.md results/summary.md results/raw_test/*.jsonl results/timing_isolated_a30/*.jsonl \
       configs/plan_t1_*.yaml configs/plan_t2*.yaml configs/plan_iso.yaml configs/t2_traces.txt RUNLOG.md results/loop_check_proposal.md 2>/dev/null
   git commit -q -m "Held-out test on A30 ($1): results/heldout.md, summary.md" \

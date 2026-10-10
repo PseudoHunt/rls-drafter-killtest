@@ -223,3 +223,10 @@ loops-included variants).
 JarvisLabs API (scripts/jl_pause.py; token read from /home/.jarvislabs_token, never printed/logged/committed;
 read-only API check passed for instance 534259). The driver retries a failed phase once with one worker; a hard stop
 or second failure → report what exists, commit, push, pause.
+
+| # | start (UTC) | end (UTC) | command | A30-h | cum A30-h | note |
+|---|---|---|---|---|---|---|
+| 30b | 2026-10-10 11:12:04 | 11:19:34 | instance idle (awaiting instructions) | 0.125 | 2.634 |  |
+| 31b | 2026-10-10 11:19:34 | 11:26:46 | T0 report, JarvisLabs SDK (env-jl) + read-only API check, held-out driver + report + bootstrap, tiny dry-runs ×2 (gate-stop and full path), T2 trace draw, pre-registration | 0.120 | 2.754 |  |
+
+**Before held-out launch: session total 2.760 A30-h. The held-out run (row 32, written by the driver) is capped at 9 A30-h from its own start.**

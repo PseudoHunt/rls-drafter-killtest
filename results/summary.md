@@ -137,3 +137,25 @@ distance, cost little once the middle is dropped), the decay is driven mostly by
 keys**, with the out-of-range distance a secondary part (capping it alone recovers half). Selection does **not**
 beat the window: best D −0.19, C′ −0.25 (C, which selects under the original rotation, barely helps) → no selection
 gain shown; CrossCov-U is not indicated. Held-out candidate besides the frozen window: none.
+
+## T0b: target-guided far-context selection (A30, 4 TTS-reference traces) = adds value → S2 frozen
+
+Visible context = prompt + window + 16 far 32-token chunks chosen every round by the target's head-summed attention
+row at the last committed position t'−1 (guarded), renumbered contiguously (NOTES.md §11). Pre-registered in RUNLOG.md.
+
+| config | τ | R | Δτ vs window | τ AIME | τ LCB | τ <2K | τ ≥8K | draft ms/round* | visible keys |
+|---|---|---|---|---|---|---|---|---|---|
+| window W 1024 + prompt | 4.085 | +0.90 | 0 | 4.348 | 3.822 | 3.246 | 4.535 | 11.6 | 1310 |
+| S1: + 16 far chunks, target layer 35 | 4.192 | +0.99 | +0.107 | 4.476 | 3.908 | 3.255 | 4.696 | 9.2 | 1754 |
+| **S2: + 16 far chunks, target layers 17/25/33** | **4.231** | **+1.03** | **+0.146** | 4.533 | 3.929 | 3.256 | 4.779 | 8.4 | 1754 |
+| S3: W 512 + 16 far chunks (window budget) | 4.157 | +0.96 | +0.072 | 4.438 | 3.875 | 3.249 | 4.618 | 8.3 | 1308 |
+| C1: window W 1536 + prompt (S1 budget) | 4.124 | +0.94 | +0.039 | 4.385 | 3.863 | 3.264 | 4.587 | 8.3 | 1757 |
+| C2: W 1024 + 16 random far chunks | 4.134 | +0.94 | +0.049 | 4.407 | 3.860 | 3.264 | 4.594 | 8.8 | 1756 |
+
+\* window row from a 3-worker run, others 2 workers; indicative only.
+
+**Rule met:** best S = S2 beats the window by +0.146 (≥ 0.1) and C1 (+0.107) and C2 (+0.097). Per trace, S2 beats
+the window, C1 and C2 on all 4 traces (+0.05 to +0.21). Caveats: margins over the controls are ≈ 0.1 τ (2–3%); S2 is
+the best of 3 scored variants on the same 4 traces; C2 is a single random seed. At equal budget (S3 vs window) the
+gain is +0.07. Extra target-side cost per round (A30, unfused upper bound): 0.6–1.1 ms for S2's 3 layers at 2K–16K
+context, 0.2–0.4 ms for one layer (results/attn_row_cost.md). **S2 frozen** as an arm in T1 and T2.

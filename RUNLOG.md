@@ -122,3 +122,14 @@ per round of update and a 1.45 GiB fp32 lm_head copy (+75 MB KL-linear state).
   window bit-exact; active selection = fresh forward on the visible rows, chunks = top-n of row t'−1; guard reads
   only row t'−1); 92/92 tests pass. GPU on lcb_abc393_d: S1 with W = 1e6 = baseline (2,675/2,675 rounds). Seen
   before pre-registering: S1 on lcb_abc393_d alone τ = 3.716 (window there 3.653); it is re-run in the grid.
+
+| # | start (UTC) | end (UTC) | command | A30-h | cum A30-h | note |
+|---|---|---|---|---|---|---|
+| 25 | 2026-10-10 10:10:31 | 10:22:56 | instance idle (awaiting instructions) | 0.207 | 1.690 | counted: instance was running |
+| 26 | 2026-10-10 10:22:56 | 10:31:24 | coding on the instance: T0b target attention summaries (rlsdk/target_attn.py), far-chunk selection in WindowCache, FarSel arm, 11 CPU tests (92/92 pass), GPU check (S1 W = 1e6 = baseline), attention-row cost microbenchmark, tiny dry-run, pre-registration | 0.141 | 1.831 | S1 on lcb_abc393_d τ = 3.716 seen before pre-registering (disclosed there) |
+| 27 | 2026-10-10 10:31:24 | 10:37:18 | `SCREEN=farsel WORKERS=2 bash scripts/run_screen.sh` (S1–S3, C1, C2 × 4 traces) | 0.098 | 1.929 | **rule met**: S2 τ 4.231, +0.146 vs window, +0.107 vs C1, +0.097 vs C2; positive on all 4 traces → S2 frozen for T1/T2 |
+| 28 | 2026-10-10 10:37:18 | 10:38:09 | write-up: summary.md, held-out proposal (S2 arm, projection 6–7 A30-h), RUNLOG, commit/push | 0.014 | 1.944 | GATE unchanged: T1/T2 await approval |
+
+**A30 session total (instance time incl. coding and idle, 08:41:09–10:38:09 UTC): 1.950 A30-h.** Old-GPU total stays 2.991 GPU-h.
+
+**Status:** T0b = target-guided selection adds value under the pre-registered rule → **S2 frozen** (W 1024 + prompt + 16 far chunks scored by target layers 17/25/33) and added to T1 and T2 alongside the window. GATE — held-out plan updated in results/heldout_proposal.md (≈ 6–7 A30-h, range 5.5–8); waiting for approval.

@@ -73,3 +73,21 @@ per round of update and a 1.45 GiB fp32 lm_head copy (+75 MB KL-linear state).
 **A30 session total (instance time incl. coding and idle, 08:41:09–09:37:02 UTC): 0.931 A30-h.** Old-GPU total stays 2.991 GPU-h.
 
 **Status:** KL screen = STOP. Windowed-context test = **promising** (best R = +0.90, pre-registered rule): per that rule, the next step is a full held-out test (not run). See results/window.md.
+
+**Pre-registered before the mechanism + selection screen (2026-10-10 09:54 UTC):**
+- Same 4 reference traces; A30 baseline τ = 3.016, gain_TTS = 1.184; target, verification and eval unchanged.
+  Frozen window = W = 1024, keep prompt (τ = 4.085). Configs (NOTES.md §10), key budget 1024 where keys are selected:
+  B window with original position ids; E all keys, distance capped at 4096; C exact top-1024 per head per query,
+  original positions; C′ top-1024 under E's capped rotation; D as C′ but one top-1024 set per head shared over the
+  16 block queries (summed logits).
+- Readings: E within 0.1 τ of the window → distance is the main cause. E near the baseline while the window is far
+  above → key count or distant noise is the cause. C′ or D beats the window by ≥ 0.1 τ → selection adds value,
+  CrossCov-U goes next.
+- Reported per config: τ, R, τ <2K, τ ≥8K, τ AIME, τ LCB, drafting ms/round.
+- After the screen: STOP at a gate and propose the held-out test (baseline, frozen window, + best of C′/D/E only if
+  it beats the window by ≥ 0.1 τ here; TTS lr = 3e-5 on all test traces; window + TTS on 16 test traces). Test
+  decision rule: window R ≥ 0.5 confirms the headline. Not launched without approval.
+- Checks before the run: 18 CPU tests (tests/test_ctxpolicy.py; no-op settings bit-exact vs baseline, active B/E =
+  fresh forward, top-k mask and masked softmax vs references); 81/81 tests pass. GPU: E with cap = 1e6 on
+  lcb_abc393_d = baseline, 2,675/2,675 rounds. Before pre-registering I also saw C′ (k = 1024, cap = 4096) on
+  lcb_abc393_d alone: τ = 3.514 (timing probe; part of the grid, re-run there).

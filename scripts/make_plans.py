@@ -5,6 +5,7 @@
   python scripts/make_plans.py refresh --lr L [...]   -> configs/plan_dev_refresh.yaml
   python scripts/make_plans.py screen [--out PATH]    -> configs/plan_screen.yaml (baseline + KL-bias + KL-linear)
   python scripts/make_plans.py window [--out PATH]    -> configs/plan_window.yaml (baseline + windowed context)
+  python scripts/make_plans.py mech [--out PATH]      -> configs/plan_mech.yaml (context policies B/E/C/C'/D)
 """
 import argparse
 import os
@@ -24,7 +25,7 @@ WINDOW_KEEP = [64, "prompt"]
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("what", choices=["baseline", "grid", "refresh", "screen", "window"])
+    ap.add_argument("what", choices=["baseline", "grid", "refresh", "screen", "window", "mech"])
     ap.add_argument("--sigma2", type=float)
     ap.add_argument("--lr", type=float, nargs="*")
     ap.add_argument("--out")
@@ -46,6 +47,14 @@ def main():
         plan = [{"method": "baseline"}]
         plan += [{"method": "window", "config": {"W": w, "keep": k}} for w in WINDOW_W for k in WINDOW_KEEP]
         name = "plan_window.yaml"
+    elif args.what == "mech":  # NOTES.md §10; baseline and the frozen window already exist in results/raw_a30_window
+        plan = [{"method": "baseline"}, {"method": "window", "config": {"W": 1024, "keep": "prompt"}},
+                {"method": "winorig", "config": {"W": 1024, "keep": "prompt"}},
+                {"method": "capctx", "config": {"cap": 4096}},
+                {"method": "topk", "config": {"k": 1024}},
+                {"method": "topkcap", "config": {"k": 1024, "cap": 4096}},
+                {"method": "topkshared", "config": {"k": 1024, "cap": 4096}}]
+        name = "plan_mech.yaml"
     else:
         plan = [{"method": "tts", "config": {"lr": lr, "refresh": True}} for lr in args.lr]
         name = "plan_dev_refresh.yaml"

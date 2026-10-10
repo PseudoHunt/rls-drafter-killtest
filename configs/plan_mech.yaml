@@ -1,0 +1,23 @@
+- method: baseline
+- method: window
+  config:
+    W: 1024
+    keep: prompt
+- method: winorig
+  config:
+    W: 1024
+    keep: prompt
+- method: capctx
+  config:
+    cap: 4096
+- method: topk
+  config:
+    k: 1024
+- method: topkcap
+  config:
+    k: 1024
+    cap: 4096
+- method: topkshared
+  config:
+    k: 1024
+    cap: 4096

@@ -19,7 +19,7 @@ from dflash.model import (
 )
 
 from .guard import Frontier, Guarded
-from .window import WindowCache, deferred_key_rope
+from .window import WindowCache, deferred_key_rope, topk_attention
 
 
 # ---------------------------------------------------------------------------
@@ -133,8 +133,10 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
     if win is None:
         cache = _make_cache(drafter.config)
     else:
-        keep = P if win["keep"] == "prompt" else int(win["keep"])
-        cache = WindowCache(drafter, keep, win["W"], T, device, next(drafter.parameters()).dtype)
+        keep = P if win.get("keep") == "prompt" else win.get("keep")
+        cache = WindowCache(drafter, keep, win.get("W"), T, device, next(drafter.parameters()).dtype,
+                            positions=win.get("positions", "contiguous"), cap=win.get("cap"), topk=win.get("topk"),
+                            shared=win.get("shared", False))
     if hasattr(adapter, "bind_head"):  # KL arms: W = lm_head weight
         adapter.bind_head(head)
     adapter.reset(H, device)
@@ -159,7 +161,7 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
                     _crop_to(cache, start)
                 else:
                     pos = cache.begin(c0, start, verify_size)
-                    with deferred_key_rope():
+                    with deferred_key_rope(), topk_attention(cache):
                         z = drafter(target_hidden=target_hidden, noise_embedding=noise, position_ids=pos,
                                     past_key_values=cache, use_cache=True)[:, 1 - verify_size:, :][0]
                 slots = torch.arange(1, verify_size, device=device)

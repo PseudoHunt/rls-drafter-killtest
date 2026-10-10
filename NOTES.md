@@ -227,3 +227,26 @@ The teacher-forced pass runs once per trace and is shared across all configs.
   `0 .. L − 1` (L = |kept| + |window|), with the block at `L .. L + 15`. Max query–key distance = L + 15 ≤ |kept| + W + 15.
   When the whole context fits (start ≤ |kept| + W), positions equal the absolute ones and the computation is the
   baseline's, element for element (bit-exact; unit-tested). Target pass and verification are unchanged.
+
+## 10. Mechanism + selection screen (context policies B, E, C, C′, D)
+
+All implemented in `rlsdk/window.py` (one cache: pre-RoPE context keys, per-round visible set + key positions, and an
+optional top-k mask applied inside the attention call); target, verification and eval unchanged. Key budget 1024
+wherever keys are selected.
+
+- **B** `winorig` (W = 1024, keep prompt): the best window's visible set, but every key and query at its original
+  absolute position (no renumbering). The kept prompt already sits at 0 .. P−1 in the contiguous scheme, and the
+  window is adjacent to the block in both schemes, so the *only* difference from the window is the query↔prompt
+  distance: ≈ start (original) vs ≈ P + W (contiguous).
+- **E** `capctx` (cap = 4096): all context keys. Keys at positions ≥ start − 4096 keep their positions; every older
+  key is rotated at start − 4096 (anchor = start, the block's first position), so query i sees all far keys at
+  distance 4096 + i (ReRoPE/Self-Extend-style clipping). All keys are kept (no key budget).
+- **C** `topk` (k = 1024): all context keys at original positions; per layer, per query head, per query, keep the
+  1024 context keys with the largest logit q·k/√d (fp32), block keys always kept, softmax over the kept set.
+- **C′** `topkcap` (k = 1024, cap = 4096): as C, but logits and attention under E's capped rotation.
+- **D** `topkshared` (k = 1024, cap = 4096): as C′, but per query head the logits are **summed over the 16 block
+  queries** and one top-1024 set is used for every query of the block. ("Scores" = logits, not probabilities.)
+- GQA: 32 query heads share 8 KV heads; selection is per query head (head h uses KV head h // 4, as `repeat_kv`).
+- Exactness: with W/cap/k ≥ context length nothing is dropped, moved or masked, and the forward is the baseline's
+  element for element (tests/test_ctxpolicy.py; E with cap = 1e6 on lcb_abc393_d: 2,675/2,675 rounds identical on
+  the A30). With selection active the masked SDPA (math/efficient kernel) replaces the unmasked kernel.

@@ -3,6 +3,7 @@
 #   bash scripts/run_screen.sh              real run on this GPU (A30, 24 GB) -> results/raw_a30, results/screen.md
 #   DRY=1 bash scripts/run_screen.sh        end-to-end dry run on the tiny model (scratch dir; no commit/push/pause)
 #   SCREEN=window bash scripts/run_screen.sh   windowed-context test instead (-> results/raw_a30_window, results/window.md)
+#   SCREEN=mech bash scripts/run_screen.sh     mechanism + selection screen (-> results/raw_a30_window, results/mechanism.md)
 # Env: WORKERS (concurrent pool workers, default 2 = fits 24 GB incl. the 10.7 GB teacher-forced transient),
 # The instance is NOT paused by this script (decided 2026-10-10): it ends with a loud DONE; pause by hand.
 # Resumable: finished (trace, method, config) files are skipped.
@@ -12,7 +13,11 @@ source scripts/resume.sh || { echo "RUN_SCREEN_ABORT resume"; exit 1; }
 WORKERS=${WORKERS:-2}
 DRY=${DRY:-0}
 SCREEN=${SCREEN:-kl}
-if [ "$SCREEN" = window ]; then
+REPORT_PY=scripts/screen_report.py
+if [ "$SCREEN" = mech ]; then
+  KIND=mech; RAW=results/raw_a30_window; MD=results/mechanism.md; ARMS=""; REPORT_PY=scripts/mechanism_report.py
+  MSG="Mechanism + selection screen on A30: B/E/C/C'/D context policies, 4 TTS-reference traces (results/mechanism.md)"
+elif [ "$SCREEN" = window ]; then
   KIND=window; RAW=results/raw_a30_window; MD=results/window.md
   ARMS="--arms window --title 'Windowed drafter context (StreamingLLM-style) vs baseline (4 TTS-reference traces)' --stop-label 'close the long-output decay line'"
   MSG="Windowed-context test on A30: W x kept set, 4 TTS-reference traces (results/window.md)"
@@ -58,7 +63,7 @@ if [ $rc != 0 ] || grep -q "HARD STOP\|Traceback\|OutOfMemory" $LOGS/screen_w*.l
   echo "RUN_SCREEN_ABORT pool (see $LOGS)"; grep -h -A3 "Traceback\|HARD STOP\|OutOfMemory" $LOGS/screen_w*.log | tail -20
   FAILED=1
 else
-  eval $PY scripts/screen_report.py $REPORT $ARMS || FAILED=1
+  eval $PY $REPORT_PY $REPORT $ARMS || FAILED=1
 fi
 
 if [ "$DRY" = 1 ]; then

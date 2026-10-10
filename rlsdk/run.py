@@ -14,7 +14,7 @@ import time
 import torch
 import yaml
 
-from .adapters import RLS, TTS, Baseline, Bias, KLBias, KLLinear, Window
+from .adapters import RLS, TTS, Baseline, Bias, CtxPolicy, KLBias, KLLinear, Window
 from .replay import near_tie_rate, simulate, teacher_forced
 
 METHODS = {"baseline": Baseline, "bias": Bias, "rls": RLS, "rls_slot": RLS, "tts": TTS,
@@ -43,6 +43,8 @@ def make_adapter(method, cfg, drafter, pristine):
     cfg = dict(cfg)
     if method == "rls_slot":
         cfg["per_slot"] = True
+    if method in CtxPolicy.MODES:
+        return CtxPolicy(method, cfg)
     ad = METHODS[method](cfg) if method != "baseline" else Baseline(cfg)
     if method == "tts":
         ad.bind(drafter, pristine)

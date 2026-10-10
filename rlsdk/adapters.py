@@ -48,6 +48,26 @@ class Window(Baseline):
         self.ctx_window = {"W": int(config["W"]), "keep": keep if keep == "prompt" else int(keep)}
 
 
+class CtxPolicy(Baseline):
+    """No adaptation; drafter context policy (rlsdk/window.py, NOTES.md §10). The method name sets the mechanism:
+      winorig     kept set + last W positions, original position ids        config: W, keep
+      capctx      all context keys, positions older than start-cap at start-cap     config: cap
+      topk        all keys, original positions, top-k per head per query     config: k
+      topkcap     all keys, capped positions, top-k per head per query        config: k, cap
+      topkshared  all keys, capped positions, top-k per head shared over the block (summed logits)  config: k, cap
+    """
+
+    MODES = {"winorig": "original", "capctx": "capped", "topk": "original", "topkcap": "capped", "topkshared": "capped"}
+
+    def __init__(self, method, config):
+        super().__init__(config)
+        self.method = method
+        keep = config.get("keep")
+        self.ctx_window = {"positions": self.MODES[method], "W": config.get("W"),
+                           "keep": keep if keep in (None, "prompt") else int(keep), "cap": config.get("cap"),
+                           "topk": config.get("k"), "shared": method == "topkshared"}
+
+
 class Bias:
     """z' = z + b, b = exponentially weighted mean of residuals (h* - z), per-token decay rho.
 

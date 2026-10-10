@@ -8,6 +8,7 @@ import time
 from types import SimpleNamespace
 
 import torch
+from torch.nn.attention import SDPBackend, sdpa_kernel
 from dflash.model import (
     _crop_to,
     _make_cache,
@@ -179,9 +180,11 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
                 prefix_len = t - th_rows.shape[1]
 
                 def grad_forward():
-                    return drafter(target_hidden=th_rows, noise_embedding=noise, position_ids=pos,
-                                   past_key_values=PrefixCache(cache, prefix_len), use_cache=True,
-                                   )[:, 1 - verify_size:, :][0]
+                    # math SDPA: deterministic backward (fused SDPA kernels accumulate dQ/dK with atomics)
+                    with sdpa_kernel(SDPBackend.MATH):
+                        return drafter(target_hidden=th_rows, noise_embedding=noise, position_ids=pos,
+                                       past_key_values=PrefixCache(cache, prefix_len), use_cache=True,
+                                       )[:, 1 - verify_size:, :][0]
 
                 rnd.grad_forward = grad_forward
                 rnd.draft_logits = lambda zz: drafter.compute_logits(zz[None], head)[0]

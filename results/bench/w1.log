@@ -1,0 +1,6 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/398 [00:00<?, ?it/s]Loading weights: 100%|██████████| 398/398 [00:00<00:00, 7371.07it/s]
+Loading weights:   0%|          | 0/58 [00:00<?, ?it/s]Loading weights: 100%|██████████| 58/58 [00:00<00:00, 9458.75it/s]
+[39707] [lcb_3701] tf_pass=24.1s near_tie=1.0437%
+[39707] [lcb_3701] rls lam=0.999_n0=128 tau=2.393 rounds=1500 wall=23.4s
+[39707] WORKER_DONE

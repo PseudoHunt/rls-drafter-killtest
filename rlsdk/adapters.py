@@ -271,6 +271,17 @@ class TTS:
     def update(self, z, h, slots, rnd):
         """rnd.grad_forward() -> z with grad for slots 1..S; rnd.target_logits [m, V] fp32."""
         m = z.shape[0]
+        prev_det = torch.are_deterministic_algorithms_enabled()
+        torch.use_deterministic_algorithms(True)
+        try:
+            loss = self._step(m, rnd)
+        finally:
+            torch.use_deterministic_algorithms(prev_det)
+        if self.refresh:
+            rnd.refresh_cache()
+        return loss
+
+    def _step(self, m, rnd):
         with torch.enable_grad():
             zg = rnd.grad_forward()[:m]
             q_logp = torch.log_softmax(rnd.draft_logits(zg).float(), dim=-1)
@@ -286,8 +297,6 @@ class TTS:
         with torch.no_grad():
             for p, mp in zip(self.params, self.masters):
                 p.copy_(mp)
-        if self.refresh:
-            rnd.refresh_cache()
         return float(loss.detach())
 
     def state_bytes(self):

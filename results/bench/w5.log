@@ -1,0 +1,6 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/398 [00:00<?, ?it/s]Loading weights: 100%|██████████| 398/398 [00:00<00:00, 9502.72it/s]
+Loading weights:   0%|          | 0/58 [00:00<?, ?it/s]Loading weights: 100%|██████████| 58/58 [00:00<00:00, 8071.05it/s]
+[39711] [lcb_arc191_d] tf_pass=48.1s near_tie=0.6962%
+[39711] [lcb_arc191_d] baseline default tau=3.545 rounds=1500 wall=20.0s
+[39711] WORKER_DONE

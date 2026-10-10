@@ -1,0 +1,6 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/398 [00:00<?, ?it/s]Loading weights: 100%|██████████| 398/398 [00:00<00:00, 7694.76it/s]
+Loading weights:   0%|          | 0/58 [00:00<?, ?it/s]Loading weights: 100%|██████████| 58/58 [00:00<00:00, 7066.86it/s]
+[39709] [aime24_II_02] tf_pass=35.8s near_tie=0.6174%
+[39709] [aime24_II_02] tts lr=3e-05 tau=4.384 rounds=1500 wall=83.5s
+[39709] WORKER_DONE

@@ -1,0 +1,60 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/398 [00:00<?, ?it/s]Loading weights: 100%|██████████| 398/398 [00:00<00:00, 6734.66it/s]
+Loading weights:   0%|          | 0/58 [00:00<?, ?it/s]Loading weights: 100%|██████████| 58/58 [00:00<00:00, 7497.21it/s]
+[W1010 06:00:43.643693116 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 171966464 bytes (free: 41353216, total: 42405855232).
+[W1010 06:00:43.665444572 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 171966464 bytes (free: 104267776, total: 42405855232).
+[W1010 06:00:43.665595007 CUDACachingAllocator.cpp:3933] memory allocation failed with OOM on device 0 while trying to allocate 171966464 bytes (free: 104267776, total: 42405855232).
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/jl_fs/rls_drafter_killtest/rlsdk/pool.py", line 144, in <module>
+    main()
+  File "/home/jl_fs/rls_drafter_killtest/rlsdk/pool.py", line 128, in main
+    tf = tf_pass_locked(target, drafter, ids, lock, device)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jl_fs/rls_drafter_killtest/rlsdk/pool.py", line 46, in tf_pass_locked
+    tf = teacher_forced(target, ids, drafter.target_layer_ids)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/envs/env-dflash/lib/python3.12/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jl_fs/rls_drafter_killtest/rlsdk/replay.py", line 41, in teacher_forced
+    out = target.model(input_ids=ids[None], use_cache=False)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/envs/env-dflash/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/envs/env-dflash/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/envs/env-dflash/lib/python3.12/site-packages/transformers/utils/generic.py", line 1068, in wrapper
+    output = func(self, *args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/envs/env-dflash/lib/python3.12/site-packages/transformers/utils/output_capturing.py", line 262, in wrapper
+    outputs = func(self, *args, **kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/envs/env-dflash/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 413, in forward
+    hidden_states = decoder_layer(
+                    ^^^^^^^^^^^^^^
+  File "/home/envs/env-dflash/lib/python3.12/site-packages/transformers/modeling_layers.py", line 114, in __call__
+    return super().__call__(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/envs/env-dflash/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/envs/env-dflash/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/envs/env-dflash/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 321, in forward
+    hidden_states = self.mlp(hidden_states)
+                    ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/envs/env-dflash/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/envs/env-dflash/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/envs/env-dflash/lib/python3.12/site-packages/transformers/models/qwen3/modeling_qwen3.py", line 82, in forward
+    down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 164.00 MiB. GPU 0 has a total capacity of 39.49 GiB of which 99.44 MiB is free. Process 39844 has 32.00 MiB memory in use. Process 39709 has 12.36 GiB memory in use. Process 39711 has 3.81 GiB memory in use. Process 39708 has 12.52 GiB memory in use. Including non-PyTorch memory, this process has 10.66 GiB memory in use. Of the allocated memory 10.02 GiB is allocated by PyTorch, and 155.03 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)

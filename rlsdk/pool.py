@@ -9,6 +9,9 @@ them). For the teacher-forced pass a worker takes a file lock, moves the layers 
 them back -- so at most one full target is on the GPU at a time.
 """
 import argparse
+import os as _os
+
+_os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")  # deterministic cuBLAS (TTS updates)
 import fcntl
 import json
 import os
@@ -95,6 +98,7 @@ def main(argv=None):
     ap.add_argument("--draft", default="z-lab/Qwen3-4B-DFlash-b16")
     ap.add_argument("--near-tie-max", type=float, default=0.03)
     ap.add_argument("--tf-lock", default=None, help="shared lock file across workers (default: OUT/.tf.lock)")
+    ap.add_argument("--worker-index", type=int, default=0, help="staggers start traces across workers")
     args = ap.parse_args(argv)
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.backends.cudnn.allow_tf32 = False
@@ -107,12 +111,23 @@ def main(argv=None):
     lock = args.tf_lock or os.path.join(args.out, ".tf.lock")
     target = drafter = pristine = None
     cached = (None, None, None)  # (trace_id, tf, near_tie)
-    for tr, method, cfg in jobs:
+    order = {tr["trace_id"]: i for i, tr in enumerate(traces)}
+    n_tr = max(len(traces), 1)
+    skip = set()  # jobs claimed by someone else this pass
+    while True:
+        # prefer jobs on the trace whose teacher-forced pass is cached; otherwise start from a staggered trace
+        todo = [j for j in jobs if not os.path.exists(out_path(args.out, j[0]["trace_id"], j[1], j[2]))
+                and id(j) not in skip]
+        if not todo:
+            break
+        todo.sort(key=lambda j: (j[0]["trace_id"] != cached[0],
+                                 (order[j[0]["trace_id"]] - args.worker_index * n_tr // 5) % n_tr))
+        job = todo[0]
+        tr, method, cfg = job
         path = out_path(args.out, tr["trace_id"], method, cfg)
-        if os.path.exists(path):
-            continue
         claim = try_claim(path)
         if claim is None:
+            skip.add(id(job))
             continue
         try:
             if os.path.exists(path):

@@ -4,6 +4,9 @@ Output: results/raw/{trace_id}__{method}__{config}.jsonl  (header line, one line
 Files are written to a .tmp name and renamed when complete.
 """
 import argparse
+import os as _os
+
+_os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")  # deterministic cuBLAS (TTS updates)
 import json
 import os
 import time

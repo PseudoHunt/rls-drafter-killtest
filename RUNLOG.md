@@ -157,3 +157,12 @@ per round of update and a 1.45 GiB fp32 lm_head copy (+75 MB KL-linear state).
   stride 10 pooled 42.0. The per-round backward cost is nearly independent of context length, so the pooled
   hybrid (a backward every round) is expected to fail the ≤ 10% cost criterion (42.0 / 58.0 = 72%) as implemented.
   τ seen in the probe (one trace, 1,200 rounds): 4.121 / 4.023 / 4.124 / 4.207 in the same order.
+
+| # | start (UTC) | end (UTC) | command | A30-h | cum A30-h | note |
+|---|---|---|---|---|---|---|
+| 29 | 2026-10-10 10:38:09 | 11:00:17 | instance idle (awaiting instructions) | 0.369 | 2.313 | counted: instance was running |
+| 30 | 2026-10-10 11:00:17 | 11:12:04 | coding on the instance: window/S2-aware TTS gradient forward, TTS stride/pool, 10 CPU tests (102/102 pass), paired bootstrap script, A30 cost probe of 4 TTS variants (aime24_II_14, 1,200 rounds each), P3 pre-registration | 0.196 | 2.509 | probe: pooled S2 + TTS stride 10 = 42 ms/round update vs 58 for TTS stride 1 (72%) → ≤ 10% cost criterion expected to fail as implemented |
+
+**A30 session total (instance time incl. coding and idle, 08:41:09–11:12:04 UTC): 2.515 A30-h.**
+
+**Status:** P3 arms coded and pre-registered; no held-out run launched. Open: tier plan (P1–P4, C2 seed 1, 8 A30-h cap) not in the repo; hybrid cost criterion vs probe.

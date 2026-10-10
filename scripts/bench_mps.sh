@@ -1,7 +1,7 @@
 #!/bin/bash
 # Amendment §12.3 benchmark: alone (no MPS) vs 6 concurrent workers under MPS; 1500 rounds per job.
 set -e
-cd /home/jl_fs/rls_drafter_killtest
+cd /home/rls_drafter_killtest
 export HF_HOME=$PWD/hf_cache PYTHONPATH=$PWD
 PY=/home/envs/env-dflash/bin/python
 B=results/bench; rm -rf $B; mkdir -p $B

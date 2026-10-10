@@ -1,6 +1,6 @@
 #!/bin/bash
 # TTS determinism check: alone x2 (no MPS) + 2 concurrent under MPS, 600 rounds, lcb_3701.
-cd /home/jl_fs/rls_drafter_killtest
+cd /home/rls_drafter_killtest
 export HF_HOME=$PWD/hf_cache PYTHONPATH=$PWD
 PY=/home/envs/env-dflash/bin/python
 B=results/bench_det; rm -rf $B; mkdir -p $B

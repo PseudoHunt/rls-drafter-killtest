@@ -1,7 +1,7 @@
 #!/bin/bash
 # Stage 2: real-vs-replay check (3 dev prompts, 4K) + timing probe on one dev trace.
 set -e
-cd /home/jl_fs/rls_drafter_killtest
+cd /home/rls_drafter_killtest
 export HF_HOME=$PWD/hf_cache PYTHONPATH=$PWD
 PY=/home/envs/env-dflash/bin/python
 echo "START $(date -u +%FT%TZ)"

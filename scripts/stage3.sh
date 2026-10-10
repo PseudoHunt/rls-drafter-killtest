@@ -1,6 +1,6 @@
 #!/bin/bash
 # Stage 3 (dev). Phases run sequentially; MPS concurrency inside phases. Resumable: finished files are skipped.
-cd /home/jl_fs/rls_drafter_killtest
+cd /home/rls_drafter_killtest
 export HF_HOME=$PWD/hf_cache PYTHONPATH=$PWD CUDA_MPS_PIPE_DIRECTORY=/tmp/mps_pipe CUDA_MPS_LOG_DIRECTORY=/tmp/mps_log
 PY=/home/envs/env-dflash/bin/python
 mkdir -p $CUDA_MPS_PIPE_DIRECTORY $CUDA_MPS_LOG_DIRECTORY logs/stage3

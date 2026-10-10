@@ -1,0 +1,6 @@
+# Stage-2 timing probe only (placeholder sigma2; outputs NOT used for any selection)
+- {method: baseline}
+- {method: rls, config: {n0: 128, lam: 0.999, sigma2: 1.0}}
+- {method: rls, config: {n0: 128, lam: 1.0, sigma2: 1.0}}
+- {method: tts, config: {lr: 3.0e-05}}
+- {method: tts, config: {lr: 3.0e-05, refresh: true}}

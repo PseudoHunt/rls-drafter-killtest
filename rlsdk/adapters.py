@@ -302,3 +302,135 @@ class TTS:
     def state_bytes(self):
         n = sum(p.numel() for p in self.masters)
         return n * 4 * 3  # fp32 masters + Adam exp_avg + exp_avg_sq
+
+
+_W32 = {}  # one fp32 copy of the (frozen) lm_head weight per process, shared by KL adapters
+
+
+def _w32(head):
+    w = head.weight
+    key = (w.data_ptr(), w.device, tuple(w.shape))
+    if key not in _W32:
+        _W32.clear()
+        _W32[key] = w.detach().float()
+    return _W32[key]
+
+
+def _rms(x, dim=None):
+    return (x * x).mean(dim=dim, keepdim=dim is not None).sqrt()
+
+
+class _KLBase:
+    """Shared plumbing for the KL arms: W (fp32 lm_head weight, tied embeddings) is bound by replay.simulate;
+    p_i = softmax(W h*_{t+i-1}), q_i = softmax(W z_i) with z_i the adapted (drafting) z; slot weights
+    w_i = exp(-(i-1)/7). The drafter has no output multiplier / softcap, so draft logits = W z."""
+
+    gamma = 7.0
+
+    def bind_head(self, head):
+        self.W = _w32(head)
+
+    def reset(self, d, device):
+        self.weights = dflash_position_weights(16, self.gamma).to(device)
+        self._zp = None
+        self._log = {}
+
+    def _p_minus_q(self, zp, h, slots):
+        """Rows (w_i (p_i - q_i)) for the valid slots, [m, V] fp32."""
+        p = torch.softmax(h.to(self.W.dtype) @ self.W.T, dim=-1)
+        q = torch.softmax(zp @ self.W.T, dim=-1)
+        return self.weights[slots - 1][:, None] * (p - q)
+
+    def pop_round_log(self):
+        out, self._log = self._log, {}
+        return out
+
+
+class KLBias(_KLBase):
+    """Reflex-form KL bias, no gate.  g = sum_{i<=a+1} w_i W^T (p_i - q_i);  m <- rho m + (1-rho) g/RMS(g);
+    z' = z + alpha RMS(z) m/RMS(m) (RMS(z) per slot row)."""
+
+    method = "klbias"
+
+    def __init__(self, config):
+        self.config = config
+        self.rho = float(config.get("rho", 0.9))
+        self.alpha = float(config["alpha"])
+
+    def reset(self, d, device):
+        super().reset(d, device)
+        self.mom = torch.zeros(d, dtype=torch.float32, device=device)
+        self.n_updates = 0
+
+    def apply(self, z, slots):
+        zf = z.float()
+        if self.n_updates == 0 or self.alpha == 0.0:
+            self._zp = zf
+            return z
+        rm = _rms(self.mom)
+        zp = zf if rm == 0 else zf + self.alpha * _rms(zf, -1) * (self.mom / rm)
+        self._zp = zp
+        return zp.to(z.dtype)
+
+    def update(self, z, h, slots, rnd):
+        m = z.shape[0]
+        g = (self._p_minus_q(self._zp[:m], h, slots) @ self.W).sum(0)  # [d]
+        rg = _rms(g)
+        if rg > 0:
+            self.mom = self.rho * self.mom + (1 - self.rho) * g / rg
+        self.n_updates += 1
+
+    def state_bytes(self):
+        return self.mom.numel() * 4
+
+
+class KLLinear(_KLBase):
+    """z' = z + A z~,  A in R^{d x (d+1)} from 0.  Loss sum_{i<=a+1} w_i KL(p_i || softmax(W z'_i));
+    closed-form gradient grad_A = sum_i w_i W^T (q'_i - p_i) z~_i^T (no autograd through the drafter).
+    Adam (betas 0.9/0.999, eps 1e-8), A and Adam state fp32.  Logs rel = max_i ||A z~_i|| / ||z_i|| per round."""
+
+    method = "kllinear"
+    REL_FLAG = 0.2
+
+    def __init__(self, config):
+        self.config = config
+        self.lr = float(config["lr"])
+
+    def reset(self, d, device):
+        super().reset(d, device)
+        self.A = torch.zeros(d, d + 1, dtype=torch.float32, device=device)
+        self.opt = torch.optim.Adam([self.A], lr=self.lr, betas=(0.9, 0.999), eps=1e-8)
+        self.n_flagged = 0
+        self.max_rel = 0.0
+
+    @staticmethod
+    def _tilde(zf):
+        return torch.cat([zf, torch.ones(zf.shape[0], 1, dtype=zf.dtype, device=zf.device)], dim=1)
+
+    def apply(self, z, slots):
+        zf = z.float()
+        corr = self._tilde(zf) @ self.A.T
+        rel = float((corr.norm(dim=-1) / zf.norm(dim=-1).clamp_min(1e-30)).max())
+        self._log = {"rel": round(rel, 6)}
+        if rel > self.REL_FLAG:
+            self.n_flagged += 1
+        self.max_rel = max(self.max_rel, rel)
+        self._zp = zf + corr
+        return self._zp.to(z.dtype)
+
+    def grad(self, zf, h, slots, zp):
+        """Closed-form dLoss/dA for rows zf (un-adapted z), zp = adapted z."""
+        G = -self._p_minus_q(zp, h, slots) @ self.W  # rows w_i W^T (q'_i - p_i)  [m, d]
+        return G.T @ self._tilde(zf)
+
+    def update(self, z, h, slots, rnd):
+        m = z.shape[0]
+        self.A.grad = self.grad(z.float(), h, slots, self._zp[:m])
+        self.opt.step()
+        self.A.grad = None
+
+    def diagnostics(self):
+        return {"rel_flag": self.REL_FLAG, "n_rounds_rel_gt_flag": self.n_flagged, "max_rel": round(self.max_rel, 6)}
+
+    def state_bytes(self):
+        return self.A.numel() * 4 * 3  # A + Adam exp_avg + exp_avg_sq (fp32); the fp32 W copy is not counted

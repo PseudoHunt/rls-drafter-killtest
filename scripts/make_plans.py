@@ -3,6 +3,7 @@
   python scripts/make_plans.py baseline               -> configs/plan_dev_baseline.yaml
   python scripts/make_plans.py grid --sigma2 X        -> configs/plan_dev_grid.yaml (bias + RLS + TTS stale)
   python scripts/make_plans.py refresh --lr L [...]   -> configs/plan_dev_refresh.yaml
+  python scripts/make_plans.py screen [--out PATH]    -> configs/plan_screen.yaml (baseline + KL-bias + KL-linear)
 """
 import argparse
 import os
@@ -14,13 +15,16 @@ BIAS_RHO = [0.9, 0.99, 0.999]
 RLS_N0 = [16, 128, 1024]
 RLS_LAM = [0.995, 0.999, 0.9999, 1.0]
 TTS_LR = [1e-5, 3e-5, 1e-4]
+KLBIAS_ALPHA = [0.005, 0.01, 0.025]  # rho = 0.9
+KLLIN_LR = [1e-7, 1e-6, 1e-5]
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("what", choices=["baseline", "grid", "refresh"])
+    ap.add_argument("what", choices=["baseline", "grid", "refresh", "screen"])
     ap.add_argument("--sigma2", type=float)
     ap.add_argument("--lr", type=float, nargs="*")
+    ap.add_argument("--out")
     args = ap.parse_args()
     if args.what == "baseline":
         plan, name = [{"method": "baseline"}], "plan_dev_baseline.yaml"
@@ -30,10 +34,15 @@ def main():
                  for n0 in RLS_N0 for lam in RLS_LAM]
         plan += [{"method": "tts", "config": {"lr": lr}} for lr in TTS_LR]
         name = "plan_dev_grid.yaml"
+    elif args.what == "screen":
+        plan = [{"method": "baseline"}]
+        plan += [{"method": "klbias", "config": {"rho": 0.9, "alpha": a}} for a in KLBIAS_ALPHA]
+        plan += [{"method": "kllinear", "config": {"lr": lr}} for lr in KLLIN_LR]
+        name = "plan_screen.yaml"
     else:
         plan = [{"method": "tts", "config": {"lr": lr, "refresh": True}} for lr in args.lr]
         name = "plan_dev_refresh.yaml"
-    path = os.path.join(ROOT, "configs", name)
+    path = args.out or os.path.join(ROOT, "configs", name)
     yaml.safe_dump(plan, open(path, "w"), sort_keys=False)
     print(path, len(plan))
 

@@ -129,6 +129,8 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
     ctx = Guarded(tf.ctx, frontier, "ctx")
     hstar = Guarded(tf.hstar, frontier, "hstar")
     cache = _make_cache(drafter.config)
+    if hasattr(adapter, "bind_head"):  # KL arms: W = lm_head weight
+        adapter.bind_head(head)
     adapter.reset(H, device)
 
     rounds = []
@@ -198,6 +200,8 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
         solve_ms = adapter.pop_solve_ms() if hasattr(adapter, "pop_solve_ms") else 0.0
         row = {"round": r, "t": t, "pos": t - P, "a": a, "tau": produced, "m": m,
                "draft_ms": round(draft_ms, 4), "update_ms": round(update_ms, 4), "solve_ms": round(solve_ms, 4)}
+        if hasattr(adapter, "pop_round_log"):
+            row.update(adapter.pop_round_log())
         rounds.append(row)
         if on_round is not None:
             on_round(row)

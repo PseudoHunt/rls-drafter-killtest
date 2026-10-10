@@ -25,7 +25,18 @@ from .replay import near_tie_rate, teacher_forced
 from .run import check_near_tie, config_name, load_traces, out_path, run_one
 
 
-def load_models_split(model_id, draft_id, device):
+def load_models_split(model_id, draft_id, device, tiny=False):
+    if tiny:  # dry runs: random tiny models, same code path
+        from .tiny import tiny_drafter, tiny_target
+        target = tiny_target()
+        drafter = tiny_drafter(target).to(device)
+        for p in target.parameters():
+            p.requires_grad_(False)
+        target.model.embed_tokens.to(device)
+        target.model.norm.to(device)
+        target.model.rotary_emb.to(device)
+        target.lm_head.to(device)
+        return target, drafter
     from dflash.model import DFlashDraftModel
     from transformers import AutoModelForCausalLM
     target = AutoModelForCausalLM.from_pretrained(model_id, attn_implementation="sdpa", dtype=torch.bfloat16).eval()
@@ -47,10 +58,12 @@ def tf_pass_locked(target, drafter, ids, lock_path, device):
         try:
             target.model.layers.to(device)
             tf = teacher_forced(target, ids, drafter.target_layer_ids)
-            torch.cuda.synchronize(device)
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
         finally:
             target.model.layers.to("cpu")
-            torch.cuda.empty_cache()
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
             fcntl.flock(lf, fcntl.LOCK_UN)
     return tf
 
@@ -99,10 +112,12 @@ def main(argv=None):
     ap.add_argument("--near-tie-max", type=float, default=0.03)
     ap.add_argument("--tf-lock", default=None, help="shared lock file across workers (default: OUT/.tf.lock)")
     ap.add_argument("--worker-index", type=int, default=0, help="staggers start traces across workers")
+    ap.add_argument("--tiny", action="store_true", help="dry run with the random tiny models")
+    ap.add_argument("--device", default="cuda")
     args = ap.parse_args(argv)
     torch.backends.cuda.matmul.allow_tf32 = False
     torch.backends.cudnn.allow_tf32 = False
-    device = torch.device("cuda")
+    device = torch.device(args.device)
     os.makedirs(args.out, exist_ok=True)
     plan = yaml.safe_load(open(args.plan))
     traces = load_traces(args.traces, args.split, args.ids)
@@ -133,12 +148,14 @@ def main(argv=None):
             if os.path.exists(path):
                 continue
             if target is None:
-                target, drafter = load_models_split(args.model, args.draft, device)
+                target, drafter = load_models_split(args.model, args.draft, device, args.tiny)
                 pristine = {k: v.detach().clone() for k, v in drafter.state_dict().items()}
             ids = torch.tensor(tr["prompt_ids"] + tr["output_ids"], dtype=torch.long, device=device)
             if cached[0] != tr["trace_id"]:
                 cached = (None, None, None)
-                torch.cuda.empty_cache()
+                if device.type == "cuda":
+                    torch.cuda.empty_cache()
+                    torch.cuda.reset_peak_memory_stats(device)
                 t0 = time.time()
                 tf = tf_pass_locked(target, drafter, ids, lock, device)
                 nt = near_tie_rate(tf.argmax, ids, tr["prompt_len"])
@@ -147,8 +164,9 @@ def main(argv=None):
                 check_near_tie(tr["trace_id"], nt, args.near_tie_max)
             _, tf, nt = cached
             s = run_one(tr, method, cfg, target, drafter, pristine, tf, ids, nt, args, path)
+            peak = torch.cuda.max_memory_reserved(device) / 2**30 if device.type == "cuda" else 0.0
             print(f"[{os.getpid()}] [{tr['trace_id']}] {method} {config_name(cfg)} tau={s['tau_mean']:.3f} "
-                  f"rounds={s['n_rounds']} wall={s['wall_s']:.1f}s", flush=True)
+                  f"rounds={s['n_rounds']} wall={s['wall_s']:.1f}s peak_reserved={peak:.2f}GB", flush=True)
         finally:
             if os.path.exists(claim):
                 os.remove(claim)

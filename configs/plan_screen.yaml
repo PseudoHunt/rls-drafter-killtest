@@ -1,0 +1,22 @@
+- method: baseline
+- method: klbias
+  config:
+    rho: 0.9
+    alpha: 0.005
+- method: klbias
+  config:
+    rho: 0.9
+    alpha: 0.01
+- method: klbias
+  config:
+    rho: 0.9
+    alpha: 0.025
+- method: kllinear
+  config:
+    lr: 1.0e-07
+- method: kllinear
+  config:
+    lr: 1.0e-06
+- method: kllinear
+  config:
+    lr: 1.0e-05

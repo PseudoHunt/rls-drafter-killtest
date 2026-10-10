@@ -21,3 +21,20 @@ Venvs live on local disk at `/home/envs/{env-dflash,env-vllm}` (rebuild: `uv ven
 | 11 | 2026-10-10 07:39 | 08:15 | `scripts/adapt_diag.py` (CPU only, aime24_I_13, 3K tokens) | 0 | 2.991 | RLS cuts out-of-sample hidden L2 by ~49% but lowers draft accuracy 31.7%→28.7% |
 
 **Status at pause:** RLS = STOP (futility rule §12.6, dev R < 0). Stage 4 not run. Next steps: HANDOFF.md.
+
+## A30 session (2026-10-10, NVIDIA A30 24 GB; no pause between coding and screen)
+
+**Pre-registered before the screen run (HANDOFF step E, as amended for the A30):**
+- Screen = 6 configs on the 4 TTS-reference traces (aime24_II_14, aime24_I_10, lcb_abc393_d, lcb_arc191_d):
+  KL-bias ρ = 0.9, α ∈ {0.005, 0.01, 0.025}; KL-linear Adam lr ∈ {1e-7, 1e-6, 1e-5}. Slot-1-only RLS dropped. All
+  adaptation math in fp32.
+- τ_base is re-measured on the A30 (flag if it differs from 3.017 by > 1%). gain_TTS is kept from the old GPU:
+  4.201 − 3.017 = 1.184. R = (τ_arm − τ_base,A30) / 1.184.
+- A30 baseline (row 12): τ = 3.016 (−0.04% vs 3.017, within 1%) → thresholds τ = 3.608 (R = 0.5), 3.312 (R = 0.25).
+- Decision on the best arm: R ≥ 0.5 → promising, run the full held-out test later; R < 0.25 → stop this line;
+  in between → report and ask.
+- The configs are selected on the same 4 traces that measure R, so the best arm's R is optimistic.
+
+| # | start (UTC) | end (UTC) | command | A30-h | cum A30-h | note |
+|---|---|---|---|---|---|---|
+| 12 | 2026-10-10 08:41:34 | 08:44:26 | `rlsdk.pool` baseline on the 4 reference traces → `results/raw_a30` (3 workers, MPS) | 0.048 | 0.048 | τ = 3.016 (old GPU 3.017); per-round trajectories diverge early (bf16 numerics, as in Stage 2) |

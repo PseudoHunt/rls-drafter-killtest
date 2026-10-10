@@ -31,13 +31,46 @@ def _pooled(rounds, lo=None, hi=None):
     return (sum(r["tau"] for r in sel) / len(sel)) if sel else float("nan"), len(sel)
 
 
-def table(runs, include_loops=False):
-    """{(method, config): {dataset: metrics, 'mean': metrics}}"""
-    groups = defaultdict(lambda: defaultdict(list))
+def apply_cut(rounds, c):
+    """Rounds of a replay over the output truncated to its first c tokens, derived from the full-trace replay.
+
+    Exact: rounds only depend on the past, the truncated trace ends at output index c-1, so its rounds are the
+    full replay's rounds with pos < c-1 and tau clipped to (c-1-pos) (DFlash's end-of-trace clipping).
+    Verified against a real truncated replay in tests/test_replay.py::test_truncation_derivation_exact.
+    """
+    out = []
+    for r in rounds:
+        if r["pos"] >= c - 1:
+            break
+        out.append({**r, "tau": min(r["tau"], c - 1 - r["pos"])})
+    return out
+
+
+def load_cuts(path):
+    """loop_cuts.csv -> {trace_id: c or None (dropped)}."""
+    import csv
+    return {row["trace_id"]: (None if row["dropped"] == "True" else int(row["c"])) for row in csv.DictReader(open(path))}
+
+
+def select(runs, variant, cuts=None):
+    """variant: 'trunc' (decision metric, Amendment 2), 'exclude' (flagged dropped), 'loops' (all, untruncated)."""
+    out = []
     for run in runs:
         h = run["header"]
-        if h.get("loop") and not include_loops:
-            continue
+        if not h.get("loop") or variant == "loops":
+            out.append(run)
+        elif variant == "trunc":
+            c = cuts[h["trace_id"]]
+            if c is not None:
+                out.append({**run, "rounds": apply_cut(run["rounds"], c)})
+    return out
+
+
+def table(runs, variant="trunc", cuts=None):
+    """{(method, config): {dataset: metrics, 'mean': metrics}}"""
+    groups = defaultdict(lambda: defaultdict(list))
+    for run in select(runs, variant, cuts):
+        h = run["header"]
         groups[(h["method"], h["config"])][h["dataset"]].append(run)
     out = {}
     for key, by_ds in groups.items():

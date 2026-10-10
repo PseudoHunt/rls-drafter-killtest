@@ -275,3 +275,38 @@ Approved 2026-10-10, before any GPU run. The decision rule in §1 is unchanged.
 5. **Prompt templates** from DFlash commit `bb48ef9`: approved.
 6. **GPU budget.** At Stage 2, re-project the full GPU budget including the RLS solve time. Stop if it goes above
    8 GPU-hours.
+
+### Amendment 2 (2026-10-10, after Stage 1, before any replay results): looping traces are truncated, not excluded
+
+Stage 1 flagged 17/62 traces (27% > 25%, §9). All are genuine greedy loops that hit the 16K cap. Excluding whole
+traces drops most of LCB's longest outputs, which biases the sample against the long-output regime under test.
+
+**Truncation rule** (applies only to the 17 flagged traces; output positions only):
+1. r_j = 1 if the 32-token window ending at position j occurred earlier in the trace, else 0.
+2. Onset p* = the smallest position p such that mean(r_p .. r_{L−1}) ≥ 0.8.
+3. Period P = the distance from the window at p* back to its earlier occurrence.
+4. Cut c = p* − max(512, P). Keep output tokens before c.
+5. Recompute the repeated fraction (the loop detector's statistic) on the kept prefix. If it is > 0.35, move c back in
+   512-token steps until it is ≤ 0.35.
+6. If fewer than 1024 output tokens remain, drop the trace.
+
+**Decision metric (amends §1):** τ pooled over all rounds of all traces, with flagged traces truncated by the rule
+above. Same thresholds and R definition.
+
+**Also reported, not used for the decision:** (a) exclusion (flagged traces dropped, as originally specified);
+(b) loops included (§3). If exclusion and truncation land in different decision bands, `summary.md` says so and GO is
+not called until discussed.
+
+**Thinking-off control:** same rule. Report baseline τ for the first 2K output tokens and overall, both truncated and
+with loops included.
+
+**No top-up** of LCB problems.
+
+Implementation notes: cuts are listed in `results/loop_cuts.csv` (and `results/loop_cuts_nothink.csv`). Truncated
+metrics are derived from the full-trace replay by `rlsdk/analyze.py::apply_cut` (keep rounds with output position
+< c−1 and clip the last round's τ at the cut). This is exact, because rounds depend only on the past; a unit test
+checks it against a real truncated replay.
+
+Open issue raised at Gate B (pending decision; implemented exactly as specified until then): for early-onset loops
+the suffix mean from p = 0 already reaches 0.8, so step 2 gives p* = 0 and the trace is dropped even though the loop
+starts ~1–3K tokens in. A 1K-window onset variant is listed in `results/loop_cuts_proposed_window.csv` for comparison.

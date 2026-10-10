@@ -174,3 +174,18 @@ def test_rls_checks_lockstep_tiny():
     rounds = simulate(d, t, ids, P, tf, lk, NEW)
     assert lk.max_logit_diff < 1e-3
     assert all("solve_ms" in r for r in rounds)
+
+
+@pytest.mark.parametrize("c", [37, 120, 201, 299])
+@pytest.mark.parametrize("method", ["baseline", "rls"])
+def test_truncation_derivation_exact(c, method):
+    """Amendment 2: metrics on a trace truncated to c output tokens == apply_cut(full-trace replay, c)."""
+    from rlsdk.analyze import apply_cut
+    t, d, prompt = _setup()
+    ids = _generate(t, d, prompt).output_ids[0]
+    mk = lambda: Baseline() if method == "baseline" else RLS({"lam": 0.99, "n0": 4, "sigma2": 1.0})
+    full = simulate(d, t, ids, P, teacher_forced(t, ids, d.target_layer_ids), mk(), NEW)
+    tids = ids[:P + c]
+    trunc = simulate(d, t, tids, P, teacher_forced(t, tids, d.target_layer_ids), mk(), NEW)
+    key = lambda rs: [(r["t"], r["tau"]) for r in rs]
+    assert key(trunc) == key(apply_cut(full, c))

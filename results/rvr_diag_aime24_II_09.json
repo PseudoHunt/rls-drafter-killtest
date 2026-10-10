@@ -1,0 +1,21 @@
+{
+ "trace_id": "aime24_II_09",
+ "A_teacher_forced": {
+  "frac_identical_by_t": 0.8963730569948186,
+  "tau_real": 4.243523316062176,
+  "tau_replay": 4.2,
+  "first_mismatch_round": 9
+ },
+ "feature_diff": {
+  "max_abs": 6354.25,
+  "mean_abs": 0.022352857515215874,
+  "frac_elems_differ": 0.838716983795166,
+  "n_positions": 4211
+ },
+ "B_recorded_real_features": {
+  "frac_identical_by_t": 1.0,
+  "tau_real": 4.243523316062176,
+  "tau_replay": 4.243523316062176,
+  "first_mismatch_round": null
+ }
+}

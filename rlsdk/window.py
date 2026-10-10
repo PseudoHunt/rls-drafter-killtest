@@ -71,6 +71,9 @@ def topk_attention(cache):
 
     def attn(module, q, k, v, attention_mask, **kw):
         n = cache.L
+        if getattr(cache, "bias", None) is not None:  # VPA: additive bias on context keys only, 0 on block keys
+            b = torch.cat([cache.bias, cache.bias.new_zeros(k.shape[2] - n)]).to(q.dtype)
+            return sdpa(module, q, k, v, b.view(1, 1, 1, -1).expand(1, 1, q.shape[2], -1), **kw)
         if cache.topk is None or cache.topk >= n:
             return sdpa(module, q, k, v, attention_mask, **kw)
         m = topk_mask(q, k[:, :, :n], kw["scaling"], cache.topk, cache.shared)
@@ -117,8 +120,11 @@ class WindowCache:
         self.w_lo = self.k_hi if self.window is None else max(self.k_hi, start - self.window)  # window: [w_lo, start)
         self.L = self.k_hi + (start - self.w_lo)  # visible context keys
         self.idx, self.far_chunks = None, []
+        self.bias = None
         if self.far is not None:
             self._select_far(start)
+            if self.far.get("vpa"):
+                self._vpa_bias(start)
         ar = lambda a, b: torch.arange(a, b, device=self.device)  # noqa: E731
         if self.positions == "contiguous":
             kpos, qpos = ar(0, self.L), ar(self.L, self.L + verify_size)
@@ -151,6 +157,33 @@ class WindowCache:
         ar = lambda a, b: torch.arange(a, b, device=self.device)  # noqa: E731
         self.idx = torch.cat([ar(0, self.k_hi), far_pos, ar(self.w_lo, start)])
         self.L = int(self.idx.numel())
+
+    def visible_positions(self):
+        if self.idx is not None:
+            return self.idx
+        return torch.cat([torch.arange(0, self.k_hi, device=self.device),
+                          torch.arange(self.w_lo, self.start, device=self.device)])
+
+    def _vpa_bias(self, start):
+        """b_j = beta*log(m_j + eps) - lam*log(1 + max(0, d_j - W0)/W0) on kept context keys (distance term on far
+        chunk keys only), centred over the kept context keys. m = target attention mass at t'-1 (guarded reads of
+        the q row start-1 and K rows < start), eps = 1/N_ctx, d_j = start - p_j. beta = lam = 0 -> no bias at all."""
+        v = self.far["vpa"]
+        beta, lam, W0 = float(v["beta"]), float(v["lam"]), float(v["W0"])
+        if beta == 0.0 and lam == 0.0:
+            return
+        pos = self.visible_positions()
+        b = torch.zeros(pos.numel(), dtype=torch.float32, device=self.device)
+        if beta:
+            from .target_attn import key_mass
+            m = key_mass(v["q"][start - 1], v["k"][0:start], v["scaling"]).to(self.device)
+            b += beta * torch.log(m[pos] + 1.0 / start)
+        if lam:
+            far = (pos >= self.k_hi) & (pos < self.w_lo)  # far-chunk keys (not prompt, not recent window)
+            d = (start - pos).float()
+            b -= lam * torch.where(far, torch.log1p((d - W0).clamp_min(0) / W0), torch.zeros_like(d))
+        b += float(v.get("b_offset", 0.0))  # tests only: a constant must not change anything
+        self.bias = b - b.mean()
 
     def _visible(self, buf):
         if self.idx is not None:

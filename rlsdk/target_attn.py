@@ -33,14 +33,21 @@ class AttnCapture:
 
 
 @torch.no_grad()
-def chunk_scores(attn, hidden, pos_emb, chunk=CHUNK, qblock=256):
-    """[T, ceil(T/chunk)] fp32 head-summed causal attention mass per key chunk, for one Qwen3Attention layer."""
+def qk_of(attn, hidden, pos_emb):
+    """Post-RoPE q [1, Hq, T, d] and k [1, Hkv, T, d], exactly as Qwen3Attention builds them."""
     T = hidden.shape[1]
     shape = (1, T, -1, attn.head_dim)
     q = attn.q_norm(attn.q_proj(hidden).view(shape)).transpose(1, 2)
     k = attn.k_norm(attn.k_proj(hidden).view(shape)).transpose(1, 2)
     cos, sin = pos_emb
-    q, k = apply_rotary_pos_emb(q, k, cos, sin)
+    return apply_rotary_pos_emb(q, k, cos, sin)
+
+
+@torch.no_grad()
+def chunk_scores(attn, hidden, pos_emb, chunk=CHUNK, qblock=256):
+    """[T, ceil(T/chunk)] fp32 head-summed causal attention mass per key chunk, for one Qwen3Attention layer."""
+    T = hidden.shape[1]
+    q, k = qk_of(attn, hidden, pos_emb)
     Hq, Hkv, d = q.shape[1], k.shape[1], q.shape[-1]
     g = Hq // Hkv
     nC = (T + chunk - 1) // chunk
@@ -68,6 +75,30 @@ def default_spec(target):
 
 
 def summaries(target, captured, spec):
-    """{name: mean over spec[name] of A_l}."""
-    A = {l: chunk_scores(target.model.layers[l].self_attn, h, pe) for l, (h, pe) in captured.items()}
-    return {name: sum(A[l] for l in ls) / len(ls) for name, ls in spec.items()}
+    """{name: mean over spec[name] of A_l} for chunk-score signals; spec["qk"] (if present) is handled by qk_store."""
+    sig = {n: ls for n, ls in spec.items() if n != "qk"}
+    need = sorted({l for ls in sig.values() for l in ls})
+    A = {l: chunk_scores(target.model.layers[l].self_attn, *captured[l]) for l in need}
+    return {name: sum(A[l] for l in ls) / len(ls) for name, ls in sig.items()}
+
+
+@torch.no_grad()
+def qk_store(target, captured, layers):
+    """Per-position post-RoPE q and k of `layers`, position-major so the leakage guard can index them:
+    q [T, L, Hq, d], k [T, L, Hkv, d] (model dtype)."""
+    qs, ks = zip(*(qk_of(target.model.layers[l].self_attn, *captured[l]) for l in layers))
+    return {"q": torch.stack([q[0].transpose(0, 1) for q in qs], dim=1),
+            "k": torch.stack([k[0].transpose(0, 1) for k in ks], dim=1), "layers": list(layers)}
+
+
+def key_mass(q_row, K, scaling):
+    """Target attention mass on each context position from one query row: q_row [L, Hq, d], K [N, L, Hkv, d] ->
+    [N] fp32, softmax per head, summed over heads, mean over layers, normalised to sum 1."""
+    L, Hq, d = q_row.shape
+    Hkv = K.shape[2]
+    out = 0
+    for l in range(L):
+        s = (q_row[l].float().reshape(Hkv, Hq // Hkv, d) @ K[:, l].float().permute(1, 2, 0)) * scaling  # [Hkv, g, N]
+        out = out + torch.softmax(s, dim=-1).sum((0, 1))
+    m = out / (L * Hq)
+    return m / m.sum()

@@ -268,3 +268,17 @@ wherever keys are selected.
   random far chunks, re-drawn every round from a CPU generator with seed 0 (deterministic).
 - Deployment cost: one extra attention row per round from the target's resident KV cache (microbenchmark in
   `results/attn_row_cost.md`); the replay's full precompute is an offline convenience, not a deployment cost.
+
+## 12. Verifier-Prior Attention (VPA; held-out addendum B)
+
+- Kept context as S2 (prompt + last W0 = 1024 + top M far 32-token chunks by S2's chunk scores, contiguous
+  renumbering), plus an additive bias on the drafter's attention logits for the kept CONTEXT keys, in every drafter
+  layer and head (block keys 0): b_j = β·log(m_j + 1/N_ctx) − λ·log(1 + max(0, d_j − W0)/W0), distance term on far-chunk
+  keys only, centred over the kept context keys (so a constant offset is a no-op and the context/block split is not
+  shifted by a uniform term). β = λ = 0 skips the bias entirely (bit-exact S2 / window).
+- m_j: the target's attention mass on context position j from the last committed query t'−1: post-RoPE q row and K
+  rows of target layers 17/25/33 are stored per position in the teacher-forced pass (`target_attn.qk_store`, read
+  through the leakage guard: only q[t'−1] and K[0 .. t'−1]); per round softmax per head (fp32), summed over the 32
+  heads, mean over the 3 layers, normalised to sum 1 over 0 .. t'−1 (`target_attn.key_mass`; = eager attention, tested).
+- The bias enters SDPA as an additive mask [1, 1, Q, K] (drafter dtype) through the same attention hook as top-k
+  (`window.topk_attention`); unmasked SDPA otherwise.

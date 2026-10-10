@@ -123,3 +123,9 @@ bug.
 
 τ_base = 3.017, τ_TTS(lr = 3e-5) = 4.201. Best RLS on these 4 traces: τ = 2.724 (R = −0.25); best hidden-residual bias:
 τ = 2.306 (R = −0.60).
+
+## JarvisLabs API token (for step D: pausing the instance)
+
+Stored at `/home/.jarvislabs_token` (mode 600, outside the repo; never commit it or echo it into logs). Read it in
+`run_screen.sh` with `JL_TOKEN=$(cat /home/.jarvislabs_token)`. Not yet tested against the API: verify the pause
+call in the CPU dry-run (step D) without actually pausing, e.g. by listing instances first.

@@ -86,13 +86,7 @@ def main():
     base = {"n0": args.n0, "sigma2": args.sigma2}
     out = {"trace_id": args.trace_id, "n0": args.n0, "sigma2": args.sigma2}
 
-    lk = Lockstep(RLS({**base, "lam": 1.0, "prior": "decay"}), RLS({**base, "lam": 1.0, "prior": "fixed"}), W64, "lam1")
-    rounds = simulate(drafter, target, ids, tr["prompt_len"], tf, lk, args.max_new_tokens)
-    lk.m_rel.append(lk._mrel())
-    out["lam1"] = {"rounds": len(rounds), "trajectory": lk.m_rel, "final": lk.m_rel[-1],
-                   "pass": lk.m_rel[-1]["rel_M"] < 1e-4}
-    print(json.dumps(out["lam1"]["final"]), flush=True)
-
+    # (b) first: decides the dtype for every RLS cell (Amendment 1)
     lk = Lockstep(RLS({**base, "lam": args.lam_fp64, "prior": "fixed", "dtype": "fp32"}),
                   RLS({**base, "lam": args.lam_fp64, "prior": "fixed", "dtype": "fp64"}), W64, "fp64")
     rounds = simulate(drafter, target, ids, tr["prompt_len"], tf, lk, args.max_new_tokens)
@@ -100,6 +94,16 @@ def main():
                    "fp32_cholesky_fallback": lk.p.diagnostics()["fp64_fallback_at"],
                    "switch_to_fp64": lk.max_logit_diff > 1e-3 or lk.p.diagnostics()["fp64_fallback_at"][0] is not None}
     print(json.dumps(out["fp64"]), flush=True)
+    dt = "fp64" if out["fp64"]["switch_to_fp64"] else "fp32"
+
+    # (a) lambda = 1: recursion vs fixed solver, both in the dtype that will actually run
+    lk = Lockstep(RLS({**base, "lam": 1.0, "prior": "decay", "dtype": dt}),
+                  RLS({**base, "lam": 1.0, "prior": "fixed", "dtype": dt}), W64, "lam1")
+    rounds = simulate(drafter, target, ids, tr["prompt_len"], tf, lk, args.max_new_tokens)
+    lk.m_rel.append(lk._mrel())
+    out["lam1"] = {"dtype": dt, "rounds": len(rounds), "trajectory": lk.m_rel, "final": lk.m_rel[-1],
+                   "pass": lk.m_rel[-1]["rel_M"] < 1e-4}
+    print(json.dumps({"lam1_dtype": dt, **out["lam1"]["final"]}), flush=True)
     json.dump(out, open(args.out, "w"), indent=1)
 
 

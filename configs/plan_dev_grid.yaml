@@ -1,0 +1,78 @@
+- method: bias
+  config:
+    rho: 0.9
+- method: bias
+  config:
+    rho: 0.99
+- method: bias
+  config:
+    rho: 0.999
+- method: rls
+  config:
+    n0: 16
+    lam: 0.995
+    sigma2: 8.628165209144912
+- method: rls
+  config:
+    n0: 16
+    lam: 0.999
+    sigma2: 8.628165209144912
+- method: rls
+  config:
+    n0: 16
+    lam: 0.9999
+    sigma2: 8.628165209144912
+- method: rls
+  config:
+    n0: 16
+    lam: 1.0
+    sigma2: 8.628165209144912
+- method: rls
+  config:
+    n0: 128
+    lam: 0.995
+    sigma2: 8.628165209144912
+- method: rls
+  config:
+    n0: 128
+    lam: 0.999
+    sigma2: 8.628165209144912
+- method: rls
+  config:
+    n0: 128
+    lam: 0.9999
+    sigma2: 8.628165209144912
+- method: rls
+  config:
+    n0: 128
+    lam: 1.0
+    sigma2: 8.628165209144912
+- method: rls
+  config:
+    n0: 1024
+    lam: 0.995
+    sigma2: 8.628165209144912
+- method: rls
+  config:
+    n0: 1024
+    lam: 0.999
+    sigma2: 8.628165209144912
+- method: rls
+  config:
+    n0: 1024
+    lam: 0.9999
+    sigma2: 8.628165209144912
+- method: rls
+  config:
+    n0: 1024
+    lam: 1.0
+    sigma2: 8.628165209144912
+- method: tts
+  config:
+    lr: 1.0e-05
+- method: tts
+  config:
+    lr: 3.0e-05
+- method: tts
+  config:
+    lr: 0.0001

@@ -22,7 +22,7 @@ import torch
 import yaml
 
 from .replay import near_tie_rate, teacher_forced
-from .run import check_near_tie, config_name, load_traces, out_path, run_one
+from .run import attn_spec, check_near_tie, config_name, load_traces, out_path, run_one
 
 
 def load_models_split(model_id, draft_id, device, tiny=False):
@@ -52,12 +52,12 @@ def load_models_split(model_id, draft_id, device, tiny=False):
     return target, drafter
 
 
-def tf_pass_locked(target, drafter, ids, lock_path, device):
+def tf_pass_locked(target, drafter, ids, lock_path, device, spec=None):
     with open(lock_path, "a") as lf:
         fcntl.flock(lf, fcntl.LOCK_EX)
         try:
             target.model.layers.to(device)
-            tf = teacher_forced(target, ids, drafter.target_layer_ids)
+            tf = teacher_forced(target, ids, drafter.target_layer_ids, attn_spec=spec)
             if device.type == "cuda":
                 torch.cuda.synchronize(device)
         finally:
@@ -157,7 +157,7 @@ def main(argv=None):
                     torch.cuda.empty_cache()
                     torch.cuda.reset_peak_memory_stats(device)
                 t0 = time.time()
-                tf = tf_pass_locked(target, drafter, ids, lock, device)
+                tf = tf_pass_locked(target, drafter, ids, lock, device, attn_spec(plan, target))
                 nt = near_tie_rate(tf.argmax, ids, tr["prompt_len"])
                 cached = (tr["trace_id"], tf, nt)
                 print(f"[{os.getpid()}] [{tr['trace_id']}] tf_pass={time.time() - t0:.1f}s near_tie={nt:.4%}", flush=True)

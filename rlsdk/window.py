@@ -12,6 +12,10 @@ Key positions (`positions`):
   contiguous  kept -> 0 .. k-1, window -> k .. L-1, block (queries and block keys) -> L .. L+15  (StreamingLLM-style)
   original    every key at its absolute position, block at start .. start+15
   capped      as original, but keys older than start - cap all sit at start - cap (ReRoPE-style clipping)
+Far chunks (`far`, T0b, NOTES.md §11): besides kept + window, keep n aligned 32-token chunks lying wholly in the
+far region [k_hi, w_lo), chosen each round by a score row (target-guided: the target's head-summed attention row at
+the last committed position start-1, read through the leakage guard; or random with a fixed seed). Visible keys are
+kept in original order and renumbered contiguously (positions must be "contiguous").
 Selection (`topk`, inside `topk_attention()`): per layer, per query head and per query, keep the top-k context keys
 by attention logit under the policy's rotation (block keys always kept) and renormalise (masked softmax);
 `shared=True` sums the logits over the block's queries per head and uses one set for the whole block.
@@ -84,7 +88,7 @@ class WindowCache:
     """Drop-in for the drafter cache: pre-RoPE context K/V for all positions, visible set rotated each round."""
 
     def __init__(self, drafter, keep, window, capacity, device, dtype, positions="contiguous", cap=None,
-                 topk=None, shared=False):
+                 topk=None, shared=False, far=None):
         cfg = drafter.config
         kvh, hd = cfg.num_key_value_heads, getattr(cfg, "head_dim", cfg.hidden_size // cfg.num_attention_heads)
         shape = (1, kvh, capacity, hd)
@@ -96,6 +100,13 @@ class WindowCache:
         self.positions, self.cap = positions, None if cap is None else int(cap)
         self.topk = None if topk is None else int(topk)
         self.shared = bool(shared)
+        # far = {"n": chunks, "chunk": 32, "score": Guarded [T, nC] row source or None (random), "seed": int}
+        self.far = far
+        assert far is None or positions == "contiguous"
+        if far is not None and far.get("score") is None:
+            self.rng = torch.Generator(device="cpu").manual_seed(int(far.get("seed", 0)))
+        self.idx = None
+        self.far_chunks = []  # chunk ids kept this round (logged)
         self.rotary = drafter.rotary_emb
         self.dtype, self.device = dtype, device
 
@@ -105,6 +116,9 @@ class WindowCache:
         self.k_hi = min(self.keep, start)  # kept: [0, k_hi)
         self.w_lo = self.k_hi if self.window is None else max(self.k_hi, start - self.window)  # window: [w_lo, start)
         self.L = self.k_hi + (start - self.w_lo)  # visible context keys
+        self.idx, self.far_chunks = None, []
+        if self.far is not None:
+            self._select_far(start)
         ar = lambda a, b: torch.arange(a, b, device=self.device)  # noqa: E731
         if self.positions == "contiguous":
             kpos, qpos = ar(0, self.L), ar(self.L, self.L + verify_size)
@@ -119,7 +133,28 @@ class WindowCache:
         # only the block's ids matter (queries); ids of the new context rows are unused (keys are rotated here)
         return torch.cat([qpos.new_zeros(self.n_new), qpos])[None]
 
+    def _select_far(self, start):
+        C, n = int(self.far.get("chunk", 32)), int(self.far["n"])
+        lo, hi = -(-self.k_hi // C), self.w_lo // C  # chunk ids wholly inside [k_hi, w_lo)
+        if hi <= lo:
+            return  # no far context: identical to the plain window
+        cand = torch.arange(lo, hi)
+        if self.far.get("score") is None:
+            pick = cand[torch.randperm(cand.numel(), generator=self.rng)[:n]]
+        else:
+            row = self.far["score"][start - 1]  # guarded: only rows <= last committed position
+            sc = row[lo:hi].float().cpu()
+            pick = cand[sc.topk(min(n, cand.numel())).indices]
+        pick = pick.sort().values
+        self.far_chunks = pick.tolist()
+        far_pos = (pick[:, None] * C + torch.arange(C)[None]).reshape(-1).to(self.device)
+        ar = lambda a, b: torch.arange(a, b, device=self.device)  # noqa: E731
+        self.idx = torch.cat([ar(0, self.k_hi), far_pos, ar(self.w_lo, start)])
+        self.L = int(self.idx.numel())
+
     def _visible(self, buf):
+        if self.idx is not None:
+            return buf[:, :, :self.start].index_select(2, self.idx)
         if self.w_lo == self.k_hi:
             return buf[:, :, :self.start]
         return torch.cat([buf[:, :, :self.k_hi], buf[:, :, self.w_lo:self.start]], dim=2)

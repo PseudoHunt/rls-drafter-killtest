@@ -4,6 +4,7 @@
 #   DRY=1 bash scripts/run_screen.sh        end-to-end dry run on the tiny model (scratch dir; no commit/push/pause)
 #   SCREEN=window bash scripts/run_screen.sh   windowed-context test instead (-> results/raw_a30_window, results/window.md)
 #   SCREEN=mech bash scripts/run_screen.sh     mechanism + selection screen (-> results/raw_a30_window, results/mechanism.md)
+#   SCREEN=farsel bash scripts/run_screen.sh   T0b target-guided far chunks (-> results/raw_a30_window, results/farsel.md)
 # Env: WORKERS (concurrent pool workers, default 2 = fits 24 GB incl. the 10.7 GB teacher-forced transient),
 # The instance is NOT paused by this script (decided 2026-10-10): it ends with a loud DONE; pause by hand.
 # Resumable: finished (trace, method, config) files are skipped.
@@ -16,7 +17,11 @@ export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:Tr
 DRY=${DRY:-0}
 SCREEN=${SCREEN:-kl}
 REPORT_PY=scripts/screen_report.py
-if [ "$SCREEN" = mech ]; then
+if [ "$SCREEN" = farsel ]; then
+  KIND=farsel; RAW=results/raw_a30_window; MD=results/farsel.md; REPORT_PY=scripts/farsel_report.py
+  ARMS="--row-cost results/attn_row_cost.md"
+  MSG="T0b on A30: target-guided far-chunk selection S1-S3 + controls C1/C2, 4 TTS-reference traces (results/farsel.md)"
+elif [ "$SCREEN" = mech ]; then
   KIND=mech; RAW=results/raw_a30_window; MD=results/mechanism.md; ARMS=""; REPORT_PY=scripts/mechanism_report.py
   MSG="Mechanism + selection screen on A30: B/E/C/C'/D context policies, 4 TTS-reference traces (results/mechanism.md)"
 elif [ "$SCREEN" = window ]; then

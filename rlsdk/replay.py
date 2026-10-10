@@ -27,12 +27,20 @@ from .window import WindowCache, deferred_key_rope, topk_attention
 # ---------------------------------------------------------------------------
 
 @torch.no_grad()
-def teacher_forced(target, ids, layer_ids, chunk=2048):
+def teacher_forced(target, ids, layer_ids, chunk=2048, attn_spec=None):
     """ids: 1-D LongTensor (prompt + continuation).
 
     Returns ctx [T, n*H] (exactly extract_context_feature's layout: outputs of decoder layers
     `layer_ids`, concatenated), hstar [T, H] (final-norm output = lm_head input), argmax [T].
+    attn_spec ({name: [target layers]}): also attn = {name: [T, ceil(T/32)] head-summed attention mass per 32-token
+    key chunk} (rlsdk/target_attn.py), for target-guided context selection.
     """
+    if attn_spec:
+        from .target_attn import AttnCapture, summaries
+        with AttnCapture(target, sorted({l for ls in attn_spec.values() for l in ls})) as cap:
+            tf = teacher_forced(target, ids, layer_ids, chunk)
+        tf.attn = summaries(target, cap.inputs, attn_spec)
+        return tf
     captured = {}
     hooks = []
     for lid in layer_ids:
@@ -134,9 +142,14 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
         cache = _make_cache(drafter.config)
     else:
         keep = P if win.get("keep") == "prompt" else win.get("keep")
+        far = None
+        if win.get("far"):
+            f = win["far"]
+            src = None if f["score"] == "random" else Guarded(tf.attn[f["score"]], frontier, f"attn_{f['score']}")
+            far = {"n": f["n"], "chunk": f.get("chunk", 32), "score": src, "seed": f.get("seed", 0)}
         cache = WindowCache(drafter, keep, win.get("W"), T, device, next(drafter.parameters()).dtype,
                             positions=win.get("positions", "contiguous"), cap=win.get("cap"), topk=win.get("topk"),
-                            shared=win.get("shared", False))
+                            shared=win.get("shared", False), far=far)
     if hasattr(adapter, "bind_head"):  # KL arms: W = lm_head weight
         adapter.bind_head(head)
     adapter.reset(H, device)
@@ -216,6 +229,8 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
                "draft_ms": round(draft_ms, 4), "update_ms": round(update_ms, 4), "solve_ms": round(solve_ms, 4)}
         if win is not None:
             row["ctx_len"] = cache.L  # visible context rows; max query-key distance = ctx_len + n_slots
+            if cache.far is not None:
+                row["far"] = len(cache.far_chunks)
         if hasattr(adapter, "pop_round_log"):
             row.update(adapter.pop_round_log())
         rounds.append(row)

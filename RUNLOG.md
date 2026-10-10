@@ -103,3 +103,22 @@ per round of update and a 1.45 GiB fp32 lm_head copy (+75 MB KL-linear state).
 **A30 session total (instance time incl. coding and idle, 08:41:09–10:10:31 UTC): 1.489 A30-h.** Old-GPU total stays 2.991 GPU-h.
 
 **Status:** mechanism screen done: the frozen window (W = 1024, keep prompt) stays best; selection (C′/D) does not beat it; E recovers 49% of its gain. **GATE** — held-out test proposed in results/heldout_proposal.md (projection ≈ 5–6 A30-h, range 4.5–7); waiting for approval.
+
+**Pre-registered before T0b, target-guided selection screen (2026-10-10 10:31 UTC; after T0 = mechanism screen, before T1):**
+- Same 4 reference traces; A30 baseline τ = 3.016; frozen window (W 1024, keep prompt) τ = 4.085; gain_TTS 1.184.
+  Target, verification and eval unchanged. NOTES.md §11.
+- Signal: target's head-summed attention row at the last committed position t'−1 (guard allows only indices ≤ t'−1),
+  scored over 32-token chunks older than the window, top chunks kept, refreshed every round, kept keys renumbered
+  contiguously in original order.
+- Configs: S1 W 1024 + prompt + 16 far chunks (target last layer, 35); S2 same, mean of layers 17/25/33; S3 W 512 +
+  prompt + 16 far chunks (S1 scoring; window budget); C1 window W 1536 + prompt (S1 budget); C2 W 1024 + prompt + 16
+  random far chunks (seed 0, re-drawn each round).
+- **Rule:** target-guided selection adds value only if the best of S1/S2/S3 beats the window by ≥ 0.1 τ **and** beats
+  both C1 and C2. If so: freeze it and add it as an arm in T1 and T2 alongside the window. If not: plan unchanged.
+- Reported: τ, τ AIME, τ LCB, τ ≥ 8K (and < 2K), draft ms/round; extra target-side cost of the attention row per
+  round (A30 microbenchmark, results/attn_row_cost.md: 0.22–0.41 ms for 1 layer, 0.56–1.12 ms for 3 layers at
+  2K–16K context).
+- Checks before the run: 11 CPU tests (tests/test_farsel.py: chunk scores = eager attention; no far context → S1 =
+  window bit-exact; active selection = fresh forward on the visible rows, chunks = top-n of row t'−1; guard reads
+  only row t'−1); 92/92 tests pass. GPU on lcb_abc393_d: S1 with W = 1e6 = baseline (2,675/2,675 rounds). Seen
+  before pre-registering: S1 on lcb_abc393_d alone τ = 3.716 (window there 3.653); it is re-run in the grid.

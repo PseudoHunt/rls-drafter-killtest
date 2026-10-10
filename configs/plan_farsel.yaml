@@ -1,0 +1,34 @@
+- method: baseline
+- method: window
+  config:
+    W: 1024
+    keep: prompt
+- method: farsel
+  config:
+    W: 1024
+    keep: prompt
+    n: 16
+    score: last
+- method: farsel
+  config:
+    W: 1024
+    keep: prompt
+    n: 16
+    score: mid3
+- method: farsel
+  config:
+    W: 512
+    keep: prompt
+    n: 16
+    score: last
+- method: window
+  config:
+    W: 1536
+    keep: prompt
+- method: farsel
+  config:
+    W: 1024
+    keep: prompt
+    n: 16
+    score: random
+    seed: 0

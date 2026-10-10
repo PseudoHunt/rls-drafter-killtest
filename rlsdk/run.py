@@ -14,11 +14,11 @@ import time
 import torch
 import yaml
 
-from .adapters import RLS, TTS, Baseline, Bias, CtxPolicy, KLBias, KLLinear, Window
+from .adapters import RLS, TTS, Baseline, Bias, CtxPolicy, FarSel, KLBias, KLLinear, Window
 from .replay import near_tie_rate, simulate, teacher_forced
 
 METHODS = {"baseline": Baseline, "bias": Bias, "rls": RLS, "rls_slot": RLS, "tts": TTS,
-           "klbias": KLBias, "kllinear": KLLinear, "window": Window}
+           "klbias": KLBias, "kllinear": KLLinear, "window": Window, "farsel": FarSel}
 
 
 def config_name(cfg):
@@ -103,6 +103,14 @@ def run_one(trace, method, cfg, target, drafter, pristine, tf, ids, nt, args, pa
     return summ
 
 
+def attn_spec(plan, target):
+    """Target attention summaries are computed in the teacher-forced pass only when a plan needs them (farsel)."""
+    if any(p["method"] == "farsel" and p.get("config", {}).get("score") != "random" for p in plan):
+        from .target_attn import default_spec
+        return default_spec(target)
+    return None
+
+
 class NearTieStop(SystemExit):
     pass
 
@@ -147,7 +155,7 @@ def main(argv=None):
             pristine = {k: v.detach().clone() for k, v in drafter.state_dict().items()}
         ids = torch.tensor(trace["prompt_ids"] + trace["output_ids"], dtype=torch.long, device=device)
         t0 = time.time()
-        tf = teacher_forced(target, ids, drafter.target_layer_ids)
+        tf = teacher_forced(target, ids, drafter.target_layer_ids, attn_spec=attn_spec(plan, target))
         nt = near_tie_rate(tf.argmax, ids, trace["prompt_len"])
         print(f"[{trace['trace_id']}] T={ids.shape[0]} tf_pass={time.time() - t0:.1f}s near_tie={nt:.4%}", flush=True)
         check_near_tie(trace["trace_id"], nt, args.near_tie_max)

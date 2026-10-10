@@ -6,6 +6,7 @@
   python scripts/make_plans.py screen [--out PATH]    -> configs/plan_screen.yaml (baseline + KL-bias + KL-linear)
   python scripts/make_plans.py window [--out PATH]    -> configs/plan_window.yaml (baseline + windowed context)
   python scripts/make_plans.py mech [--out PATH]      -> configs/plan_mech.yaml (context policies B/E/C/C'/D)
+  python scripts/make_plans.py farsel [--out PATH]    -> configs/plan_farsel.yaml (T0b target-guided far chunks)
 """
 import argparse
 import os
@@ -25,7 +26,7 @@ WINDOW_KEEP = [64, "prompt"]
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("what", choices=["baseline", "grid", "refresh", "screen", "window", "mech"])
+    ap.add_argument("what", choices=["baseline", "grid", "refresh", "screen", "window", "mech", "farsel"])
     ap.add_argument("--sigma2", type=float)
     ap.add_argument("--lr", type=float, nargs="*")
     ap.add_argument("--out")
@@ -55,6 +56,15 @@ def main():
                 {"method": "topkcap", "config": {"k": 1024, "cap": 4096}},
                 {"method": "topkshared", "config": {"k": 1024, "cap": 4096}}]
         name = "plan_mech.yaml"
+    elif args.what == "farsel":  # T0b, NOTES.md §11; baseline and the frozen window already exist
+        far = {"keep": "prompt", "n": 16}
+        plan = [{"method": "baseline"}, {"method": "window", "config": {"W": 1024, "keep": "prompt"}},
+                {"method": "farsel", "config": {"W": 1024, **far, "score": "last"}},             # S1
+                {"method": "farsel", "config": {"W": 1024, **far, "score": "mid3"}},             # S2
+                {"method": "farsel", "config": {"W": 512, **far, "score": "last"}},              # S3
+                {"method": "window", "config": {"W": 1536, "keep": "prompt"}},                   # C1
+                {"method": "farsel", "config": {"W": 1024, **far, "score": "random", "seed": 0}}]  # C2
+        name = "plan_farsel.yaml"
     else:
         plan = [{"method": "tts", "config": {"lr": lr, "refresh": True}} for lr in args.lr]
         name = "plan_dev_refresh.yaml"

@@ -48,6 +48,20 @@ class Window(Baseline):
         self.ctx_window = {"W": int(config["W"]), "keep": keep if keep == "prompt" else int(keep)}
 
 
+class FarSel(Baseline):
+    """No adaptation; window + kept prompt + n far 32-token chunks re-selected every round (T0b, NOTES.md §11).
+    config: W, keep, n, score ("last" | "mid3": target attention row at start-1; "random": fixed seed), seed."""
+
+    method = "farsel"
+
+    def __init__(self, config):
+        super().__init__(config)
+        keep = config["keep"]
+        self.ctx_window = {"W": int(config["W"]), "keep": keep if keep == "prompt" else int(keep),
+                           "positions": "contiguous",
+                           "far": {"n": int(config["n"]), "score": config["score"], "seed": int(config.get("seed", 0))}}
+
+
 class CtxPolicy(Baseline):
     """No adaptation; drafter context policy (rlsdk/window.py, NOTES.md §10). The method name sets the mechanism:
       winorig     kept set + last W positions, original position ids        config: W, keep

@@ -250,3 +250,21 @@ wherever keys are selected.
 - Exactness: with W/cap/k ≥ context length nothing is dropped, moved or masked, and the forward is the baseline's
   element for element (tests/test_ctxpolicy.py; E with cap = 1e6 on lcb_abc393_d: 2,675/2,675 rounds identical on
   the A30). With selection active the masked SDPA (math/efficient kernel) replaces the unmasked kernel.
+
+## 11. T0b: target-guided far-context selection
+
+- Signal: after each verification the next round starts at t' (= `start`). The target's attention row at the last
+  committed position t'−1 is summed over its 32 query heads and reduced to 32-token chunks, A[t'−1, c] =
+  Σ_heads Σ_{key ∈ [32c, 32c+32)} softmax(q_{t'−1}·k / √d). It depends only on tokens ≤ t'−1. Layers (0-based):
+  `last` = 35; `mid3` = mean of 17, 25, 33 (the layers DFlash reads). Refreshed every round.
+- Replay: all rows are computed once per trace inside the teacher-forced pass (`rlsdk/target_attn.py`: pre-hook on
+  each scoring layer's `self_attn` captures its input, q/k rebuilt as in `Qwen3Attention`, causal softmax in fp32,
+  query blocks of 256) and read through the leakage guard (`Guarded`, frontier = t'): only row t'−1 is read
+  (tested). Matches eager attention on the tiny model (atol 1e-5).
+- Far region = after the kept prompt and older than the window, [P, t' − W); candidates = aligned 32-token chunks
+  lying wholly inside it. Keep the top 16 by score (ties by `torch.topk`), in original order. Visible keys = prompt
+  + chosen chunks + window, renumbered contiguously (as the window: positions 0 .. L−1, block at L .. L+15).
+- Controls: C1 = plain window W 1536 + prompt (same key count as S1: 1024 + 512); C2 = W 1024 + prompt + 16
+  random far chunks, re-drawn every round from a CPU generator with seed 0 (deterministic).
+- Deployment cost: one extra attention row per round from the target's resident KV cache (microbenchmark in
+  `results/attn_row_cost.md`); the replay's full precompute is an offline convenience, not a deployment cost.

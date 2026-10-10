@@ -191,8 +191,10 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
             adapter.update(z[:m], h, slots[:m], rnd)
             update_ms = (_sync(device) - t1) * 1e3
 
+        # solve_ms: RLS linear-algebra time this round (Cholesky / solves); contained in draft_ms + update_ms
+        solve_ms = adapter.pop_solve_ms() if hasattr(adapter, "pop_solve_ms") else 0.0
         row = {"round": r, "t": t, "pos": t - P, "a": a, "tau": produced, "m": m,
-               "draft_ms": round(draft_ms, 4), "update_ms": round(update_ms, 4)}
+               "draft_ms": round(draft_ms, 4), "update_ms": round(update_ms, 4), "solve_ms": round(solve_ms, 4)}
         rounds.append(row)
         if on_round is not None:
             on_round(row)

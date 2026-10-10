@@ -192,3 +192,16 @@ that would be a numerical artefact, not a property of the method.
 | 4 | 50 test traces × 4 frozen configs | ~1.5–2 h |
 
 The teacher-forced pass runs once per trace and is shared across all configs.
+
+## 8. Gate A resolutions (see KILL_TEST_BRIEF.md §11)
+
+- RLS arm = `prior: fixed` (exact solver) for λ < 1, and the recursion (`prior: decay`) at λ = 1 (the default in
+  `rlsdk/adapters.py::RLS`). Grid: n0 ∈ {16, 128, 1024} × λ ∈ {0.995, 0.999, 0.9999, 1.0}.
+- fp32 solve, with an automatic fp64 fallback on Cholesky failure (logged in the header as
+  `diagnostics.fp64_fallback_at`). `scripts/rls_checks.py` runs on one dev trace: λ = 1 recursion vs fixed
+  (rel. err. of M < 1e-4), and fp32 vs fp64 corrected logits (> 1e-3 → fp64 for all RLS runs). The fp64 check uses
+  the worst-conditioned cell (n0 = 16, λ = 0.995).
+- Per-round `solve_ms` = time in the Cholesky factorisation and solves (fixed) or the recursion's update algebra
+  (decay). It is contained in `draft_ms + update_ms`.
+- TTS refresh: at the best stale lr; if it wins by > 5% there, also run it at the other two lrs.
+- Thinking-OFF control: `traces/traces_nothink.jsonl` (6 dev AIME prompts), baseline replay only.

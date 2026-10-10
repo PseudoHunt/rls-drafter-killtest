@@ -71,12 +71,14 @@ def run_one(trace, method, cfg, target, drafter, pristine, tf, ids, nt, args, pa
     t0 = time.time()
     rounds = simulate(drafter, target, ids, trace["prompt_len"], tf, ad, args.max_new_tokens, on_round=on_round)
     state_bytes = ad.state_bytes()
+    diag = ad.diagnostics() if hasattr(ad, "diagnostics") else {}
     if method == "tts":
         ad.finish()
     head = {"type": "header", "trace_id": trace["trace_id"], "dataset": trace["dataset"], "split": trace["split"],
             "method": method, "config": config_name(cfg), "config_full": cfg, "prompt_len": trace["prompt_len"],
             "n_out": len(trace["output_ids"]), "finish_reason": trace.get("finish_reason"),
-            "loop": trace.get("loop", False), "near_tie_rate": nt, "state_bytes": state_bytes}
+            "loop": trace.get("loop", False), "near_tie_rate": nt, "state_bytes": state_bytes,
+            "diagnostics": diag}
     summ = {"type": "summary", "n_rounds": len(rounds), "tau_mean": sum(r["tau"] for r in rounds) / max(len(rounds), 1),
             "wall_s": round(time.time() - t0, 3)}
     if method == "baseline":

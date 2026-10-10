@@ -16,13 +16,17 @@ def main():
     ap.add_argument("--model", default="Qwen/Qwen3-4B")
     ap.add_argument("--max-new-tokens", type=int, default=16384)
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--no-thinking", action="store_true", help="Amendment-4 control (thinking OFF)")
+    ap.add_argument("--only-split", default=None)
+    ap.add_argument("--only-dataset", default=None)
     args = ap.parse_args()
 
     from transformers import AutoTokenizer
     from vllm import LLM, SamplingParams
     from vllm.inputs import TokensPrompt
 
-    problems = load_problems()[: args.limit]
+    problems = [p for p in load_problems()
+                if (args.only_split in (None, p["split"])) and (args.only_dataset in (None, p["dataset"]))][: args.limit]
     done = set()
     if os.path.exists(args.out):
         done = {json.loads(line)["trace_id"] for line in open(args.out)}
@@ -33,7 +37,7 @@ def main():
 
     tok = AutoTokenizer.from_pretrained(args.model)
     eos = [151645, 151643]  # Qwen3-4B generation_config eos_token_id (same list DFlash uses as stop ids)
-    prompts = [build_input_ids(tok, p["prompt"]) for p in todo]
+    prompts = [build_input_ids(tok, p["prompt"], enable_thinking=not args.no_thinking) for p in todo]
     max_len = max(len(x) for x in prompts) + args.max_new_tokens + 16
     llm = LLM(model=args.model, dtype="bfloat16", max_model_len=max_len, gpu_memory_utilization=0.85,
               seed=0, enable_prefix_caching=False)
@@ -49,7 +53,8 @@ def main():
                 out_ids.append(int(c.stop_reason) if isinstance(c.stop_reason, int) else eos[0])
             f.write(json.dumps({**{k: p[k] for k in ("trace_id", "dataset", "split")},
                                 "prompt_len": len(x), "prompt_ids": x, "output_ids": out_ids,
-                                "finish_reason": c.finish_reason, "loop": loop_flag(out_ids)}) + "\n")
+                                "finish_reason": c.finish_reason, "loop": loop_flag(out_ids),
+                                "thinking": not args.no_thinking}) + "\n")
     print(f"generated {len(todo)} traces in {gen_s:.1f}s", flush=True)
 
 

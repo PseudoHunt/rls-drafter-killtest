@@ -151,3 +151,26 @@ def test_bias_and_rls_change_drafts():
     base = [r["tau"] for r in simulate(d, t, ids, P, tf, Baseline(), NEW)]
     for ad in (Bias({"rho": 0.9}), RLS({"lam": 0.99, "n0": 1, "sigma2": 0.1})):
         assert [r["tau"] for r in simulate(d, t, ids, P, tf, ad, NEW)] != base
+
+
+def test_rls_checks_lockstep_tiny():
+    """scripts/rls_checks.Lockstep on the tiny model: lam=1 recursion == fixed; fp32 ~ fp64."""
+    import importlib.util
+    import os
+    spec = importlib.util.spec_from_file_location(
+        "rls_checks", os.path.join(os.path.dirname(__file__), "..", "scripts", "rls_checks.py"))
+    rc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rc)
+    t, d, prompt = _setup()
+    ids = _generate(t, d, prompt).output_ids[0]
+    tf = teacher_forced(t, ids, d.target_layer_ids)
+    W = t.lm_head.weight.double()
+    base = {"n0": 4, "sigma2": 1.0}
+    lk = rc.Lockstep(RLS({**base, "lam": 1.0, "prior": "decay"}), RLS({**base, "lam": 1.0, "prior": "fixed"}),
+                     W, "lam1", every=20)
+    simulate(d, t, ids, P, tf, lk, NEW)
+    assert lk._mrel()["rel_M"] < 1e-4
+    lk = rc.Lockstep(RLS({**base, "lam": 0.99, "dtype": "fp32"}), RLS({**base, "lam": 0.99, "dtype": "fp64"}), W, "fp64")
+    rounds = simulate(d, t, ids, P, tf, lk, NEW)
+    assert lk.max_logit_diff < 1e-3
+    assert all("solve_ms" in r for r in rounds)

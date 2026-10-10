@@ -15,7 +15,7 @@ from rlsdk.data import loop_flag
 from rlsdk.tiny import tiny_drafter, tiny_target
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TIMING = {"draft_ms", "update_ms", "wall_s"}
+TIMING = {"draft_ms", "update_ms", "solve_ms", "wall_s"}
 PLAN = [
     {"method": "baseline"},
     {"method": "bias", "config": {"rho": 0.9}},

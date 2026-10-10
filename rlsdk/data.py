@@ -59,11 +59,12 @@ def load_problems():
     return out
 
 
-def build_input_ids(tokenizer, prompt):
-    """Qwen3 default chat template, thinking ON (DFlash benchmark.apply_chat_template path)."""
+def build_input_ids(tokenizer, prompt, enable_thinking=True):
+    """Qwen3 default chat template, thinking ON by default (DFlash benchmark.apply_chat_template path).
+    enable_thinking=False only for the Amendment-4 control."""
     text = tokenizer.apply_chat_template(
         [{"role": "user", "content": prompt}], tokenize=False,
-        add_generation_prompt=True, enable_thinking=True,
+        add_generation_prompt=True, enable_thinking=enable_thinking,
     )
     return tokenizer.encode(text, add_special_tokens=False)
 

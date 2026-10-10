@@ -66,7 +66,7 @@ def test_rls_apply_equals_M_ztilde(prior):
 
 def test_per_slot_rls_routes_groups():
     d = 8
-    ad = RLS({"lam": 0.99, "n0": 4, "sigma2": 1.0, "per_slot": True})
+    ad = RLS({"lam": 0.99, "n0": 4, "sigma2": 1.0, "per_slot": True, "prior": "decay"})
     ad.reset(d, "cpu")
     z, h = torch.randn(15, d), torch.randn(15, d)
     ad.update(z, h, torch.arange(1, 16), None)
@@ -92,3 +92,38 @@ def test_bias_is_exponentially_weighted_mean():
     ref = (w[:, None] * torch.stack(res)).sum(0) / w.sum()
     z = torch.randn(2, d)
     assert torch.allclose(ad.apply(z, None) - z, ref.expand(2, d), atol=1e-5)
+
+
+def test_cholesky_failure_falls_back_to_fp64(monkeypatch):
+    """Amendment 1: a failed fp32 Cholesky switches the state to fp64 and records when."""
+    real = torch.linalg.cholesky_ex
+
+    def flaky(A, **kw):
+        L, info = real(A, **kw)
+        if A.dtype == torch.float32:
+            info = torch.ones_like(info)
+        return L, info
+
+    st = _RLSState(8, 1.0, 0.99, "fixed", "cpu")
+    z, h = torch.randn(4, 8), torch.randn(4, 8)
+    monkeypatch.setattr(torch.linalg, "cholesky_ex", flaky)
+    st.update(z, h)
+    assert st.fp64_fallback_at == 0 and st.dtype == torch.float64 and st.L.dtype == torch.float64
+    ref = _RLSState(8, 1.0, 0.99, "fixed", "cpu", torch.float64)
+    monkeypatch.setattr(torch.linalg, "cholesky_ex", real)
+    ref.update(z.double(), h.double())
+    assert torch.allclose(st.M(torch.float64), ref.M(torch.float64))
+
+
+def test_default_prior_follows_amendment():
+    assert RLS({"lam": 1.0, "n0": 1, "sigma2": 1}).prior == "decay"
+    assert RLS({"lam": 0.999, "n0": 1, "sigma2": 1}).prior == "fixed"
+
+
+def test_lam1_recursion_equals_fixed():
+    d = 16
+    a, b = _RLSState(d, 2.0, 1.0, "decay", "cpu"), _RLSState(d, 2.0, 1.0, "fixed", "cpu")
+    for z, h in _rounds(d, 200, seed=3):
+        a.update(z, h)
+        b.update(z, h)
+    assert (a.M() - b.M()).norm() / b.M().norm() < 1e-4

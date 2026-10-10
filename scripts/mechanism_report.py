@@ -41,8 +41,9 @@ def main():
     L = ["# Mechanism + selection screen (4 TTS-reference traces)", "",
          f"GPU {args.gpu}. τ_base = {tb:.3f}; gain_TTS = {gain:.3f} (old GPU); R = (τ − τ_base)/gain_TTS. Key budget "
          "1024 for selection. τ: flagged traces truncated (none here), pooled per dataset, mean of AIME and LCB; "
-         "τ <2K / ≥8K by output position. Draft ms/round under 3 concurrent workers (MPS); the baseline and window rows "
-         "come from the earlier window run (also 3 workers).", "",
+         "τ <2K / ≥8K by output position. Draft ms/round measured under concurrent workers (MPS): baseline and window "
+         "rows from the window run (3 workers); new rows mostly with 2 workers (a 3-worker attempt hit CUDA OOM; 6 jobs "
+         "finished under 3 workers were kept), so timings are indicative only.", "",
          "| config | τ mean | R | Δτ vs window | τ AIME | τ LCB | τ <2K | τ ≥8K | draft ms/round |",
          "|---|---|---|---|---|---|---|---|---|"]
     for key, label in ROWS:
@@ -58,11 +59,13 @@ def main():
     sel = {"C′": g(("topkcap", "cap=4096_k=1024")), "D": g(("topkshared", "cap=4096_k=1024"))}
     best_sel = max(sel, key=sel.get)
     L += ["", "## Pre-registered readings (RUNLOG.md)", ""]
-    near_base = abs(tE - tb) < abs(tE - tw)
-    L.append(f"- E vs window: Δτ = {tE - tw:+.3f} → " + (
+    frac = (tE - tb) / (tw - tb)
+    L.append(f"- E vs window: Δτ = {tE - tw:+.3f}, E recovers {100 * frac:.0f}% of the window's gain → " + (
         "**within 0.1 τ: distance is the main cause.**" if abs(tE - tw) <= 0.1 else
-        ("**E near baseline while the window is far above: key count or distant noise is the cause.**" if near_base
-         else "**neither reading applies cleanly (E is between baseline and window, nearer the window).**")))
+        ("**E near baseline (within 0.1 τ) while the window is far above: key count or distant noise is the cause.**"
+         if abs(tE - tb) <= 0.1 else
+         "**neither pre-registered reading applies cleanly: capping distance recovers part of the gain; the rest "
+         "needs the distant keys removed (key count / distant noise).**")))
     d = sel[best_sel] - tw
     L.append(f"- Best of C′/D: {best_sel}, Δτ vs window = {d:+.3f} → " + (
         "**beats the window by ≥ 0.1 τ: selection adds value; CrossCov-U next.**" if d >= 0.1 else

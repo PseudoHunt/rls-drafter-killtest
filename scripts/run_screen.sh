@@ -11,6 +11,8 @@ set -u
 cd /home/rls_drafter_killtest
 source scripts/resume.sh || { echo "RUN_SCREEN_ABORT resume"; exit 1; }
 WORKERS=${WORKERS:-2}
+# variable-size per-round tensors (context policies) fragment the caching allocator; this curbs it (numerics unchanged)
+export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
 DRY=${DRY:-0}
 SCREEN=${SCREEN:-kl}
 REPORT_PY=scripts/screen_report.py

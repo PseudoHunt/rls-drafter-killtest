@@ -91,3 +91,15 @@ per round of update and a 1.45 GiB fp32 lm_head copy (+75 MB KL-linear state).
   fresh forward, top-k mask and masked softmax vs references); 81/81 tests pass. GPU: E with cap = 1e6 on
   lcb_abc393_d = baseline, 2,675/2,675 rounds. Before pre-registering I also saw C′ (k = 1024, cap = 4096) on
   lcb_abc393_d alone: τ = 3.514 (timing probe; part of the grid, re-run there).
+
+| # | start (UTC) | end (UTC) | command | A30-h | cum A30-h | note |
+|---|---|---|---|---|---|---|
+| 20 | 2026-10-10 09:37:02 | 09:46:17 | instance idle (awaiting instructions) | 0.154 | 1.079 | counted: instance was running |
+| 21 | 2026-10-10 09:46:17 | 09:54:29 | coding on the instance: context policies B/E/C/C′/D (window.py generalised), 18 CPU tests (81/81 pass), mechanism report, GPU checks (E cap = 1e6 bit-identical to baseline; C′ timing probe on lcb_abc393_d), tiny dry-run, pre-registration | 0.137 | 1.216 | C′ on lcb_abc393_d τ = 3.514 seen before pre-registering (disclosed there) |
+| 22 | 2026-10-10 09:54:29 | 09:59:00 | `SCREEN=mech WORKERS=3 bash scripts/run_screen.sh` — first attempt | 0.075 | 1.291 | **CUDA OOM** in one worker (TF pass while a top-k worker held 12 GB: allocator fragmentation from per-round variable-size tensors); stopped; 6 finished jobs kept |
+| 23 | 2026-10-10 09:59:00 | 10:08:15 | `SCREEN=mech WORKERS=2 bash scripts/run_screen.sh` (relaunch, expandable_segments) | 0.154 | 1.445 | best = window (frozen) τ 4.085; B 4.001, D 3.899, C′ 3.839, E 3.539 (49% of window gain), C 3.198 → no selection gain; no extra held-out arm |
+| 24 | 2026-10-10 10:08:15 | 10:10:31 | report fixes (E reading, timing note), TTS cost probe on A30 (400 rounds, 62 ms/round, peak 13.4 GB), held-out proposal, summary/RUNLOG, commit/push | 0.038 | 1.483 | GATE: held-out test proposed (results/heldout_proposal.md), not launched |
+
+**A30 session total (instance time incl. coding and idle, 08:41:09–10:10:31 UTC): 1.489 A30-h.** Old-GPU total stays 2.991 GPU-h.
+
+**Status:** mechanism screen done: the frozen window (W = 1024, keep prompt) stays best; selection (C′/D) does not beat it; E recovers 49% of its gain. **GATE** — held-out test proposed in results/heldout_proposal.md (projection ≈ 5–6 A30-h, range 4.5–7); waiting for approval.

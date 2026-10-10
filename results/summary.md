@@ -114,3 +114,26 @@ inside the kept cache (StreamingLLM-style; NOTES.md §9). Target and verificatio
 is mostly a long-context effect inside the drafter. All 4 configs land at R = 0.83–0.90, so the selection optimism
 from tuning on the same 4 traces is small; the evidence is still only 4 traces (2 AIME, 2 LCB). gain_TTS is the
 old-GPU TTS gain, used as a yardstick. Full table: `results/window.md`.
+
+## Mechanism + selection screen (A30, 4 TTS-reference traces)
+
+Training-free context policies (NOTES.md §10), key budget 1024 where keys are selected. Pre-registered in RUNLOG.md.
+
+| config | τ | R | Δτ vs window | τ AIME | τ LCB | τ <2K | τ ≥8K | draft ms/round* |
+|---|---|---|---|---|---|---|---|---|
+| baseline | 3.016 | 0 | −1.069 | 3.028 | 3.004 | 3.271 | 2.655 | 12.0 |
+| **window W = 1024, keep prompt (frozen)** | **4.085** | **+0.90** | 0 | 4.348 | 3.822 | 3.246 | 4.535 | 11.6 |
+| B: window, original position ids | 4.001 | +0.83 | −0.084 | 4.298 | 3.704 | 3.261 | 4.398 | 11.2 |
+| E: all keys, distance capped at 4096 | 3.539 | +0.44 | −0.546 | 3.697 | 3.381 | 3.271 | 3.383 | 15.6 |
+| C: top-1024, original positions | 3.198 | +0.15 | −0.887 | 3.255 | 3.141 | 3.278 | 2.957 | 25.9 |
+| C′: top-1024, capped positions | 3.839 | +0.70 | −0.246 | 4.080 | 3.599 | 3.278 | 3.992 | 26.3 |
+| D: top-1024 shared over block, capped | 3.899 | +0.75 | −0.186 | 4.156 | 3.643 | 3.275 | 4.134 | 19.7 |
+
+\* under 2–3 concurrent workers; indicative only.
+
+Readings (pre-registered): E recovers 49% of the window's gain — **neither** "E ≈ window" (distance is the main cause)
+nor "E ≈ baseline" applies cleanly. Together with B ≈ window (−0.08; original positions, i.e. the full query↔prompt
+distance, cost little once the middle is dropped), the decay is driven mostly by **attending to many distant middle
+keys**, with the out-of-range distance a secondary part (capping it alone recovers half). Selection does **not**
+beat the window: best D −0.19, C′ −0.25 (C, which selects under the original rotation, barely helps) → no selection
+gain shown; CrossCov-U is not indicated. Held-out candidate besides the frozen window: none.

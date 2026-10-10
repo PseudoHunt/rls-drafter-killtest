@@ -1,6 +1,6 @@
 # Mechanism + selection screen (4 TTS-reference traces)
 
-GPU A30. τ_base = 3.016; gain_TTS = 1.184 (old GPU); R = (τ − τ_base)/gain_TTS. Key budget 1024 for selection. τ: flagged traces truncated (none here), pooled per dataset, mean of AIME and LCB; τ <2K / ≥8K by output position. Draft ms/round under 3 concurrent workers (MPS); the baseline and window rows come from the earlier window run (also 3 workers).
+GPU A30. τ_base = 3.016; gain_TTS = 1.184 (old GPU); R = (τ − τ_base)/gain_TTS. Key budget 1024 for selection. τ: flagged traces truncated (none here), pooled per dataset, mean of AIME and LCB; τ <2K / ≥8K by output position. Draft ms/round measured under concurrent workers (MPS): baseline and window rows from the window run (3 workers); new rows mostly with 2 workers (a 3-worker attempt hit CUDA OOM; 6 jobs finished under 3 workers were kept), so timings are indicative only.
 
 | config | τ mean | R | Δτ vs window | τ AIME | τ LCB | τ <2K | τ ≥8K | draft ms/round |
 |---|---|---|---|---|---|---|---|---|
@@ -14,6 +14,6 @@ GPU A30. τ_base = 3.016; gain_TTS = 1.184 (old GPU); R = (τ − τ_base)/gain_
 
 ## Pre-registered readings (RUNLOG.md)
 
-- E vs window: Δτ = -0.546 → **E near baseline while the window is far above: key count or distant noise is the cause.**
+- E vs window: Δτ = -0.546, E recovers 49% of the window's gain → **neither pre-registered reading applies cleanly: capping distance recovers part of the gain; the rest needs the distant keys removed (key count / distant noise).**
 - Best of C′/D: D, Δτ vs window = -0.186 → **does not beat the window by ≥ 0.1 τ: no selection gain shown.**
 - Held-out candidate besides the frozen window: none (no C′/D/E config beats the window by ≥ 0.1 τ).

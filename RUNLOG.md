@@ -585,7 +585,7 @@ Readings (pre-registered):
   corrects for (N stays ≈ N0).
 - "SharpDraft + S2" (released weights) dropped (user decision).
 
-### Item 2 — thinking-mode drafter: results (posted 09:49 UTC, before item 3 starts)
+### Item 2 — thinking-mode drafter: results (posted 09:48 UTC, before item 3 starts)
 
 Run 09:24:31–09:47:19 (2 light workers, both arms per trace; results/s4_thinking.md). Drafter
 jgeuter/qwen3-4b-dpard-thinking-b16 @ 78baf29 (3 layers, target layers [1, 17, 33]; loads unchanged in the DFlash path).
@@ -616,4 +616,36 @@ rule out a better thinking-mode retrain; it shows that a public thinking-trained
 does not reach S2+cal. It still decays in full context (≥ 8K 3.438), and S2 helps it too (+0.202; ≥ 8K +0.671),
 i.e. the context effect is not specific to the released checkpoint.
 
-**Item 3 gate (09:49 UTC):** 6-h cap at 14:36:37; elapsed 1.21 A30-h → 4.79 A30-h remain ≥ 2.5 → **cal-full starts.**
+**Item 3 gate (09:48 UTC):** 6-h cap at 14:36:37; elapsed 1.20 A30-h → 4.80 A30-h remain ≥ 2.5 → **cal-full starts.**
+
+### Item 3 — cal-full: results (posted 10:39 UTC)
+
+Fine-tune 09:48:19–10:21:58 (`python -m rlsdk.calibrate --traces traces/traces_cal.jsonl --lrs 1e-5 --steps 1415
+--batch 16 --layout full --micro 4 --out ckpt/calfull`; teacher-forced passes 95 s, training 1,916 s = 1.35 s/step,
+4 length-sorted micro-batches of 4 anchors per step, same 22,640 anchors as S2+cal; loss first-50 mean 14.66 →
+last-50 11.78 (S2+cal: 13.19 → 11.51)); checkpoint `ckpt/calfull/lr1e-05/model.safetensors`, **sha256
+1f3ba7a4bddc1f17bade5608eebfb7e6f512b393cb61ff01d39283615a05b797** (not in git). Replay without a window (full
+context) 10:21:58–10:36:12, 2 light workers, 50/50 test traces (49 after the drop); results/s4_calfull.md.
+
+| arm | τ | τ 0–2K | τ 2–4K | τ 4–8K | τ ≥8K | τ AIME (23) | τ LCB (26) | update ms/round |
+|---|---|---|---|---|---|---|---|---|
+| baseline (released, full context; reused) | 3.100 | | | | | | | 0 |
+| S2 (released; reused) | 4.069 | 3.516 | 4.020 | 4.185 | 4.416 | 4.276 | 3.862 | 0 |
+| TTS stride 1 (reused) | 4.208 | 3.693 | 4.396 | 4.213 | 4.483 | 4.353 | 4.063 | 69.63 |
+| S2+cal (reused) | 4.408 | 3.779 | 4.370 | 4.578 | 4.756 | 4.607 | 4.209 | 0 |
+| **cal-full** | **4.166** | 3.763 | 4.322 | 4.342 | 4.187 | 4.365 | 3.968 | 0 |
+
+| contrast (paired 95% CI) | overall | 0–2K | 2–4K | 4–8K | ≥8K | AIME | LCB |
+|---|---|---|---|---|---|---|---|
+| cal-full − TTS stride 1 | −0.042 [−0.077, −0.001] | +0.070 [+0.046, +0.094] | −0.074 [−0.117, −0.035] | +0.129 [+0.095, +0.171] | −0.295 [−0.346, −0.234] | +0.011 [−0.040, +0.077] | −0.095 [−0.143, −0.048] |
+| cal-full − S2+cal | **−0.242 [−0.272, −0.206]** | −0.016 [−0.030, −0.004] | −0.047 [−0.066, −0.029] | −0.236 [−0.267, −0.207] | −0.568 [−0.621, −0.515] | −0.243 [−0.286, −0.188] | −0.241 [−0.285, −0.196] |
+| cal-full − baseline | +1.066 [+0.976, +1.141] | | | | | | |
+| cal-full − S2 | +0.097 [+0.058, +0.144] | | | | | | |
+
+Reading (pre-registered): **cal-full is below S2+cal** (−0.242, CI excludes 0) → the "S2 layout adds nothing on top
+of calibration" reading does **not** apply: the S2 layout adds +0.242 [+0.206, +0.272] on top of calibration, almost
+all of it late (0–2K +0.016, 2–4K +0.047, 4–8K +0.236, ≥ 8K +0.568). Calibration alone (thinking-mode adaptation,
+full context) gives the largest single gain (+1.066 over the released baseline) and lands 0.042 below TTS stride 1
+(CI upper bound −0.001) at zero online cost; it is already above TTS in 0–2K and 4–8K but decays at ≥ 8K (4.187 vs
+4.342 at 4–8K), which is what the S2 layout removes. Decomposition vs the released baseline (3.100): S2 alone +0.969,
+calibration alone +1.066, both +1.308 (sub-additive: both partly fix the same early/late deficit).

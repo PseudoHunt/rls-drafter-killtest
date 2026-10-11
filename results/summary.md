@@ -14,9 +14,12 @@ onset, 1 dropped trace excluded → 49 test traces), τ = mean of AIME and LCB p
 - **S2+cal beats TTS stride 1 at zero online cost: τ 4.408 vs 4.208, +0.200 [+0.179, +0.222]** (update ms/round 0 vs
   69.6). S2+cal − S2 = +0.339 [+0.308, +0.371]. S2+cal = the S2 drafter context with the released DFlash weights
   fine-tuned once, offline, on thinking-on calibration traces; no updates at inference.
-- **full** (S2+cal + exact batched pooled TTS stride 10, lr 1e-5): τ 4.548, **+0.340 [+0.319, +0.360] vs TTS**, +0.140
-  [+0.122, +0.157] vs S2+cal — beats TTS, **but not "cheaper"**: amortized update 11.36 ms/round = 16.3% of TTS stride 1
-  (criterion ≤ 10%).
+- **full = the cost–τ trade-off point, not the headline** (S2+cal + exact batched pooled TTS stride 10, lr 1e-5): τ
+  4.548, **+0.140 more τ than S2+cal [+0.122, +0.157] for 11.4 ms/round of updates, 6.1× cheaper than TTS stride 1**
+  (69.6 ms/round); +0.340 [+0.319, +0.360] vs TTS. It **fails the pre-registered ≤ 10% cost rule** (11.36 ms/round =
+  16.3% of TTS stride 1's update cost); the 10% line is not relaxed. Per bin vs S2+cal: 0–2K +0.023 [+0.015, +0.031],
+  2–4K +0.114 [+0.090, +0.140], 4–8K +0.164 [+0.144, +0.185], ≥ 8K +0.251 [+0.216, +0.284] (session 4, from the saved
+  replays).
 - **Fairness (Step 6, run):** TTS stride 1 with a full context-cache refresh after every step vs the stale cache, 4
   reference traces: **refresh − stale = −0.07%** (τ 4.316 vs 4.319; stop threshold +2%). The stale-cache TTS used in
   every comparison is therefore a fair baseline.

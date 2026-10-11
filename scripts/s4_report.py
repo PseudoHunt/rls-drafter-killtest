@@ -218,8 +218,14 @@ def item3(args):
     if partial:
         notes.append(f"**PARTIAL: {len(sub)} of {len(ids)} test traces** (all contrasts on these traces only).")
     L, boot = heldout_tables([cf], [tts, cal], sub, "Session 4, item 3 — cal-full (A30)", notes)
-    sa, sb = cf.stats(), base.stats()
-    L += ["", f"| cal-full − baseline | {fmt_ci(*boot.ci(lambda d: tau(sa, d) - tau(sb, d)))} |"]
+    s2 = Arm("S2", rt, S2, ids_all, c)
+    L += ["", "## Further contrasts (paired 95% CI)", "", "| contrast | CI |", "|---|---|"]
+    for a, b in ((cf, base), (cf, s2), (cal, cf)):
+        sa, sb = a.stats(), b.stats()
+        L.append(f"| {a.label} − {b.label} | {fmt_ci(*boot.ci(lambda d: tau(sa, d) - tau(sb, d)))} |")
+    for _, lo, hi in BINS:
+        sa, sb = cal.stats(lo, hi), cf.stats(lo, hi)
+        L.append(f"| S2+cal − cal-full, {_} | {fmt_ci(*boot.ci(lambda d: tau(sa, d) - tau(sb, d)))} |")
     w, ci = reading(boot, cf, cal)
     L += ["", "## Reading (pre-registered)", "",
           f"- cal-full − S2+cal {fmt_ci(*ci)} ({w})"

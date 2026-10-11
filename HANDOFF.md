@@ -4,6 +4,19 @@ Read this first. Then `results/summary.md` (results, newest first), `RUNLOG.md` 
 hours), `NOTES.md` (DFlash internals §1–4, context policies §9–12, batched update + calibration §13, SharpDraft /
 related work §14–15) and `KILL_TEST_BRIEF.md` (original brief + amendments §11–12: replay design and rules).
 
+**Non-git artifacts are in GitHub release `artifacts-s4`** (checkpoints `ckpt/cal/lr1e-05`, `ckpt/cal/lr3e-06`,
+`ckpt/calfull/lr1e-05` and `traces/*.jsonl`); restore with:
+```bash
+gh release download artifacts-s4 -D /tmp/art &&
+mkdir -p ckpt/cal ckpt/calfull traces &&
+tar xzf /tmp/art/s2cal_lr1e-05.tar.gz -C ckpt/cal &&
+tar xzf /tmp/art/s2cal_lr3e-06.tar.gz -C ckpt/cal &&
+tar xzf /tmp/art/calfull_lr1e-05.tar.gz -C ckpt/calfull &&
+tar xzf /tmp/art/traces.tar.gz -C traces
+```
+then verify hashes against `results/ARTIFACTS.md`. Checkpoint sidecars (config/summary/train_log) are also in git
+under `ckpt_meta/`. `hf_cache/` and `/home/papers_dl` are not shipped and are re-downloadable.
+
 ## Where things stand (one paragraph)
 
 The original RLS question is closed (STOP). The long-output acceptance decay of the DFlash drafter (Qwen3-4B,

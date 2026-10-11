@@ -408,3 +408,65 @@ results/raw_test_s3_micro5/, not used). Budget trim: stride 20 (exploratory) is 
 (9 full-batch, 6 micro-5, all same maths; lcb_arc190_c missing) and are reported as a partial, exploratory table.
 Step 6 (TTS stride 1 refresh, 4 reference traces) runs now (06:21) on the otherwise idle GPU; chain driver
 (scripts/run_s3_chain.sh): Step 6 → Step 1 rerun → τ guard → lr pick → Step 4.
+
+**Step 6 result (06:21–06:40:53 UTC, run early on the idle GPU; pre-registered rule):** TTS stride 1 lr 1e-5, 4
+reference traces, A30: stale τ 4.319, refresh (full context-cache rebuild after every step) τ 4.316 → refresh − stale
+= −0.07% (stop threshold +2%) → **no stop; stale TTS is a fair baseline.** Per trace (stale / refresh): aime24_II_14
+5.024 / 4.989, aime24_I_10 4.200 / 4.200, lcb_abc393_d 3.816 / 3.836, lcb_arc191_d 4.236 / 4.236 (refresh is active:
+trajectories diverge from round 45–121 on; equal τ on two traces with equal round counts is coincidence). Refresh
+costs +12–14 ms/round of update.
+
+**Step 4 screen — posted before continuing (screen 06:56:12–07:00:34 UTC; lr 1e-5 picked: S2+cal τ 4.540 vs 4.468 at 3e-6).**
+
+| arm | traces | τ | τ 0–2K | τ 2–4K | τ 4–8K | τ ≥8K | τ 0–4K | update ms/round | rounds |
+|---|---|---|---|---|---|---|---|---|---|
+| S2 | 4 | 4.231 | 3.256 | 4.013 | 4.251 | 4.779 | 3.594 | 0.02 | 12609 |
+| TTS stride 1 | 4 | 4.319 | 3.462 | 4.413 | 4.221 | 4.719 | 3.880 | 70.50 | 12366 |
+| S2+cal (static) | 4 | 4.540 | 3.488 | 4.395 | 4.599 | 5.044 | 3.889 | 0.02 | 11749 |
+| full = S2+cal + batched TTS s10 | 4 | 4.678 | 3.522 | 4.496 | 4.760 | 5.264 | 3.949 | 10.98 | 11410 |
+
+| trace | S2 | TTS stride 1 | S2+cal (static) | full = S2+cal + batched TTS s10 |
+|---|---|---|---|---|
+| aime24_II_14 | 4.926 | 5.024 | 5.316 | 5.432 |
+| aime24_I_10 | 4.198 | 4.200 | 4.487 | 4.607 |
+| lcb_abc393_d | 3.742 | 3.816 | 4.004 | 4.066 |
+| lcb_arc191_d | 4.059 | 4.236 | 4.360 | 4.587 |
+
+Readings (pre-registered):
+- Mode mismatch: S2 0–4K τ 3.594, TTS 3.880 (deficit +0.286), S2+cal 3.889 → closes 103% (need ≥ 50%) → **supported**
+- Promote full: τ_full 4.678 vs τ_TTS + 0.10 = 4.419; full > TTS on 4/4 traces → **PROMOTE**
+- Promote S2+cal: τ_S2cal 4.540 vs τ_TTS 4.319 → **PROMOTE**
+- Selection optimism: the S2+cal lr was chosen on these 4 traces (TTS lr also dev-tuned).
+
+Step 1 result (06:40:59–06:56:07): batched stride 10 τ 4.426 vs per-round pooled 4.429 → τ check PASS; amortized update 11.49 ms/round = 16.5% of TTS stride 1 (69.60) → cost criterion NOT met; batched s10 − TTS s1 +0.127 [+0.060, +0.173] (16 traces). results/batched.md.
+
+Budget at 07:15 UTC: 3.59 A30-h used (incl. 07:00–07:15 idle: monitor had expired). Step 5 both arms ≈ 1.27 A30-h → projection ≈ 5.0–5.1 with wrap-up > 5 cap. Per the budget rule: Step 5 runs S2+cal first (≈ 0.5 A30-h, fits); "full" on test only if the budget is extended.
+
+**Budget extended by the user (07:20 UTC): ≈ 6 A30-h for this session** — "full" runs on all test traces after S2+cal (same calibrated drafter, one process alone on the GPU).
+
+**Step 5 (held-out, 49 test traces):** S2+cal 07:15:33–07:39:07 (0.393 A30-h); full 07:39:07–08:03 (OOM in a
+teacher-forced pass after 28 traces: previous jobs' memory not released; fix: `gc.collect()` before each trace's TF
+pass in rlsdk/pool.py) + 08:04:21–08:27:37 (remaining 22; each process alone on the GPU). Results
+(results/s3_heldout.md): **S2+cal − TTS stride 1 +0.200 [+0.179, +0.222] → beats TTS; cheaper (0 ms) → YES.**
+**full − TTS +0.340 [+0.319, +0.360] → beats TTS; update 11.36 ms/round = 16.3% → not cheaper.** S2+cal − S2 +0.339
+[+0.308, +0.371]; full − S2 +0.479 [+0.440, +0.520]; full − S2+cal +0.140 [+0.122, +0.157]. Step 6 (refresh − stale
+−0.07%) was run, so no stale-cache caveat applies. Reference traces in the test set: none (all dev; asserted).
+
+| # | start (UTC) | end (UTC) | what | A30-h | cum A30-h |
+|---|---|---|---|---|---|
+| 34 | 03:39:37 | 04:21:11 | resume, orientation, env checks, awaiting go-ahead, Step 1 code + tests, bf16/fp32 GPU probes, pre-registration | 0.693 | 0.693 |
+| 35 | 04:21:11 | 04:37:41 | Step 1 run #1 (OOM at stride 20; superseded) | 0.275 | 0.968 |
+| 36 | 04:37:50 | 04:54:08 | Step 2: 60 calibration traces (vLLM) | 0.272 | 1.242 |
+| 37 | 04:54:08 | 05:32:52 | Step 3: calibration, both lrs | 0.646 | 1.887 |
+| 38 | 05:32:52 | 05:52:28 | TTS stride 1 lr 1e-5 on the 4 reference traces; S2+cal evals (OOM, rerun 05:49:48–05:52:28) | 0.327 | 2.215 |
+| 39 | 05:52:28 | 06:21:31 | Step 1 rerun #2 (micro 5; OOM; superseded) + fix | 0.484 | 2.699 |
+| 40 | 06:21:31 | 06:40:53 | Step 6: TTS refresh, 4 reference traces | 0.323 | 3.021 |
+| 41 | 06:40:59 | 06:56:07 | Step 1 final (stride 10, 16 traces) | 0.252 | 3.276 |
+| 42 | 06:56:12 | 07:00:34 | Step 4: full on the 4 reference traces + screen report | 0.074 | 3.350 |
+| 43 | 07:00:34 | 07:15:33 | idle (expired monitor) + RUNLOG table, budget check | 0.250 | 3.600 |
+| 44 | 07:15:33 | 08:27:37 | Step 5: S2+cal and full on the test traces (incl. the OOM restart) | 1.201 | 4.800 |
+| 45 | 08:27:37 | ≈ 08:33 | reports, summary.md, HANDOFF.md, NOTES (SharpDraft paper read, related work), commit, push, API pause | 0.09 | ≈ 4.89 |
+
+Cumulative = wall-clock instance time since the resume (short gaps between rows included).
+
+**Session 3 total: 03:39:37 → API pause ≈ 08:33 UTC = ≈ 4.89 A30-h** (cap 5, extended to ≈ 6 by the user). Old totals: 2.991 old-GPU h; session 2 ≈ 8.98 A30-h.

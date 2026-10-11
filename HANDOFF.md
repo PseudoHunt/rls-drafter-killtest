@@ -1,131 +1,130 @@
-# HANDOFF — RLS drafter kill test (paused 2026-10-10)
+# HANDOFF — drafter long-output decay: S2 context + one-time thinking-mode calibration (paused 2026-10-11)
 
-Read this first in a fresh session. Then read `KILL_TEST_BRIEF.md` (brief + amendments §11, §12), `NOTES.md` and
-`RUNLOG.md`.
+Read this first. Then `results/summary.md` (results, newest first), `RUNLOG.md` (every run, pre-registrations, A30
+hours), `NOTES.md` (DFlash internals §1–4, context policies §9–12, batched update + calibration §13) and
+`KILL_TEST_BRIEF.md` (original brief + amendments §11–12: replay design and the rules we follow).
 
-## Where things live (all under /home — the only thing that survives a JarvisLabs pause)
+## Where things stand (one paragraph)
+
+The original RLS question is closed (STOP). The long-output acceptance decay of the DFlash drafter (Qwen3-4B,
+thinking on, 16K) turned out to be a **drafter-context** problem (S2: prompt + last 1024 + 16 far chunks chosen by the
+target's attention) plus a **thinking-mode mismatch**. Session 3 fixed the mismatch once, offline: the released DFlash
+weights fine-tuned on 59 disjoint thinking-on calibration traces in S2 layout (**S2+cal**, frozen checkpoint sha256
+`cc25cc15a3782b56e2a5be9d1a17bbaf74718be966413447b76a5b728e8ca5d7`). On the 49 held-out test traces (replay, A30):
+**S2+cal τ 4.408 vs TTS stride 1 4.208: +0.200 [+0.179, +0.222], with zero online update cost** (TTS: 69.6 ms/round of
+updates). Refresh-vs-stale fairness check for TTS: refresh − stale = −0.07% (run). "full" (S2+cal + exact batched
+pooled TTS stride 10): see summary.md (beats TTS further but fails the ≤ 10% cost criterion: ≈ 11 ms/round). What
+calibration buys is not yet split into thinking-mode vs S2-layout adaptation — that is open question (a).
+
+## Rerun S2+cal from the frozen checkpoint (one command)
+
+```bash
+cd /home/rls_drafter_killtest && bash scripts/rerun_s2cal.sh
+```
+It sources `scripts/resume.sh`, verifies the checkpoint hash, replays S2+cal on all 50 test traces into
+`results/raw_test_cal_rerun/` (≈ 0.4 A30-h; resumable) and prints τ next to 4.408 (expect MATCH on an A30; other GPU
+types differ slightly through bf16 numerics, as in every earlier cross-GPU check).
+
+If `ckpt/` is gone (it is not in git): rebuild with
+`python -m rlsdk.calibrate --traces traces/traces_cal.jsonl --lrs 1e-5 --steps 1415 --batch 16 --out ckpt/cal`
+(≈ 0.33 A30-h; needs `traces/traces_cal.jsonl`, regenerate with
+`$ENV_VLLM/bin/python scripts/gen_traces.py --set cal --out traces/traces_cal.jsonl --max-new-tokens 8192`, ≈ 0.27 A30-h).
+A rebuild is the same recipe but not guaranteed bit-identical (vLLM / cuBLAS nondeterminism): it gets a new hash.
+
+## Where things live (only /home survives a JarvisLabs pause)
 
 | what | path |
 |---|---|
-| repo / `$PERSIST` | `/home/rls_drafter_killtest` (git remote: `github.com/PseudoHunt/rls-drafter-killtest`, private) |
-| model weights (`HF_HOME`) | `/home/rls_drafter_killtest/hf_cache` (Qwen/Qwen3-4B, z-lab/Qwen3-4B-DFlash-b16; not in git) |
-| traces (not in git) | `/home/rls_drafter_killtest/traces/{traces,traces_nothink}.jsonl` |
-| per-round replay logs | `/home/rls_drafter_killtest/results/raw/*.jsonl` (dev), `results/raw_nothink/` |
-| venvs | `/home/envs/env-dflash` (torch 2.13, transformers 5.15, dflash 0.1.0), `/home/envs/env-vllm` (vLLM 0.31); interpreters in `/home/.local/share/uv/python` |
-| resume | `source scripts/resume.sh` — sets env (offline HF), activates env-dflash, restarts MPS if a GPU is present, checks everything; prints `RESUME OK` |
+| repo | `/home/rls_drafter_killtest` (git `github.com/PseudoHunt/rls-drafter-killtest`, private; branch `main`) |
+| model weights (`HF_HOME`, offline) | `hf_cache/` (Qwen/Qwen3-4B, z-lab/Qwen3-4B-DFlash-b16; not in git) |
+| calibrated drafter | `ckpt/cal/lr1e-05/` (frozen, chosen), `ckpt/cal/lr3e-06/`, `ckpt/cal/summary.json`, `train_log.txt` (not in git) |
+| traces (not in git) | `traces/traces.jsonl` (62 dev/test), `traces/traces_cal.jsonl` (60 calibration), `traces/traces_nothink.jsonl` |
+| per-round replay logs | `results/raw_test/` (test: baseline, window, S2, C1, C2, TTS, T2 arms, batched stride 10/20), `results/raw_test_cal/` (S2+cal, full), `results/raw_a30*/` (dev / reference traces) |
+| venvs | `/home/envs/env-dflash` (torch 2.13, transformers 5.15, dflash 0.1.0), `/home/envs/env-vllm` (vLLM 0.31), `/home/envs/env-jl` (jarvislabs SDK); interpreters in `/home/.local/share/uv/python` |
+| resume | `source scripts/resume.sh` → prints `RESUME OK` (sets offline HF env, activates env-dflash, MPS, GPU + dflash import check) |
+| JarvisLabs token | `/home/.jarvislabs_token` (mode 600, outside the repo; never print, log or commit). Pause: `$ENV_JL/bin/python scripts/jl_pause.py --pause` (`--check` is read-only); uses `$MACHINE_ID` (instance 534645 this session) |
 
-The old copy at `/home/jl_fs/rls_drafter_killtest` (Ceph volume, 90% full) is stale; do not use it.
+`/home/rls_vpa` is an old worktree of branch `vpa` (merged); `/home/jl_fs/...` are stale copies / another project.
 
-## Current state
+## Code map
 
-- GPU used so far: 2.99 GPU-h (see RUNLOG.md). Stages 0–2 done; Stage 3 (dev) partially done, then stopped on request.
-- Dev runs complete (12 dev traces, full traces; decision metric = flagged traces truncated per `results/loop_cuts.csv`):
-  baseline; thinking-off control baseline; bias (hidden-residual) ρ ∈ {0.9, 0.99, 0.999}; RLS fp64, n0 ∈ {16, 128, 1024}
-  × λ ∈ {0.995, 0.999, 0.9999, 1.0}. TTS: lr ∈ {1e-5, 3e-5, 1e-4} on 5 AIME dev traces; **TTS reference set**
-  lr = 3e-5 on 4 dev traces (aime24_II_14, aime24_I_10, lcb_abc393_d, lcb_arc191_d). The TTS grid and the
-  stale-vs-refresh check were cancelled (not needed after the RLS STOP).
-- σ² = 8.628 (`configs/sigma2.json`). RLS runs in fp64 (fp32-vs-fp64 logit diff 3.2e-3 > 1e-3); λ = 1 recursion vs
-  fixed solver in fp64: rel. err 1e-12 (`results/rls_checks.json`; fp32 round in `results/rls_checks_round1_fp32.json`).
-- **RLS = STOP (futility rule §12.6).** Every bias and RLS config is *below* the baseline on dev (truncated, mean of
-  AIME and LCB): baseline τ = 3.028; best RLS (n0 = 128, λ = 0.9999) τ = 2.739; best bias (ρ = 0.999) τ = 2.304. Dev R of
-  the best RLS config is negative (< 0.15) → STOP; Stage 4 is not run. See `results/dev_interim.md` for the table.
-- CPU diagnostic `scripts/adapt_diag.py` (does RLS cut out-of-sample hidden-state L2 error while lowering argmax
-  accuracy?) — see "Diagnostic status" at the end of this file.
+- `rlsdk/replay.py` round simulation (leakage guard, TTS gradient pass); `rlsdk/window.py` context policies (window,
+  S2 far chunks, VPA); `rlsdk/adapters.py` arms (Baseline, FarSel = S2, TTS with stride / pool / ctx / batched /
+  micro / warm); `rlsdk/batched.py` exact batched pooled update; `rlsdk/calibrate.py` offline calibration;
+  `rlsdk/pool.py` resumable workers (`--draft` takes a checkpoint dir); `rlsdk/analyze.py` decision variant (loop
+  truncation), bins.
+- Reports: `scripts/s3_report.py {step1,screen,heldout,lrpick}` (session 3), `scripts/heldout_report.py` (session 2).
+- Checks: `scripts/check_cal_disjoint.py` (calibration set vs the 62 problems; output `results/cal_disjoint.txt`),
+  `scripts/batched_check_fp32.py`.
+- Tests: `python -m pytest -q tests` on CPU (127 tests, ≈ 3.5 min). Do not run two CPU torch jobs at once (thread
+  oversubscription makes both crawl).
 
-## Files that matter
+## Operational lessons (24 GB A30)
 
-- `rlsdk/replay.py` (round simulation, guard, TTS grad pass), `rlsdk/adapters.py` (Baseline, Bias, RLS, TTS),
-  `rlsdk/run.py` (single-process runner), `rlsdk/pool.py` (concurrent MPS workers), `rlsdk/analyze.py` (pooled τ,
-  truncation, bins), `rlsdk/data.py` (datasets, templates, loop flag/cut).
-- `scripts/dev_table.py` (Gate C table), `scripts/summarize.py` (summary.md), `scripts/stage3.sh` (dev driver),
-  `scripts/rls_checks.py`, `scripts/rvr_diag.py`, `scripts/adapt_diag.py`, `scripts/resume.sh`.
-- `tests/` (40 CPU tests: `python -m pytest -q tests`, ~2 min).
+- Never run a TTS-type worker (≈ 13 GB steady) next to another worker: a teacher-forced pass (+8 GB target layers)
+  then OOMs. Two light (no-TTS) workers are fine.
+- Batched TTS needs `gqa_attention` + micro-batching (both default now); transformers' SDPA path expanded K/V per
+  pooled round and OOMed on long-prompt LCB traces.
+- `pkill -f <pattern>` / `pgrep -f` from a shell whose command line contains the pattern kills that shell: use PIDs.
+- Monitors expire after 30 min; an expired monitor cost 14 idle minutes this session.
 
-## NEXT SESSION steps (copied in full from the user's instructions)
+## NEXT PHASE (user plan of 2026-10-11, items A–J; cheaper GPU) — NOT pre-registered, NOT run
 
-NEXT SESSION (CPU-only instance or my laptop; no GPU):
-A. From the dev replay logs, compute per-slot conditional acceptance,
-   P(a ≥ i | a ≥ i−1), for baseline, best RLS and best hidden-residual
-   bias. Report slot 1, slots 2–4 and slots 5–15.
-B. summary.md: RLS = STOP (futility rule §12.6). Include the dev table
-   and the per-slot table. Label the bias arm "hidden-residual bias",
-   not "Reflex-like".
-C. Implement three arms, with CPU unit tests on the tiny model:
-   1. KL-bias (Reflex form, no gate). Use g = Wᵀ(p − q) per valid slot
-      (i ≤ a+1), weighted by w_i. Update m ← ρ·m + (1−ρ)·g/RMS(g) and
-      apply z' = z + α·RMS(z)·m/RMS(m).
-      Grid: ρ = 0.9, α ∈ {0.005, 0.01, 0.025}.
-   2. KL-linear adapter: z' = z + A·z̃, A ∈ R^{d×(d+1)}, starting at 0.
-      Loss: Σ_{i≤a+1} w_i · KL(p_i ‖ softmax(W z'_i)).
-      Closed-form gradient, no autograd through the drafter:
-      ∇A = Σ_i w_i · Wᵀ(q'_i − p_i) · z̃_iᵀ.
-      Adam, lr ∈ {1e-7, 1e-6, 1e-5}. Keep A and Adam state in fp32. Log
-      ‖A·z̃‖/‖z‖ per round and flag anything above 0.2.
-   3. Slot-1-only RLS: fit and apply at slot 1 only, using the best
-      (n0, λ) from the dev grid.
-   Tests: closed-form gradient = autograd; A = 0 and α = 0 reproduce
-   baseline bit-exactly; the leakage guard still raises; only pairs
-   with i ≤ a+1 are used.
-D. Write scripts/run_screen.sh. It should, in order:
-   - run resume.sh;
-   - run the 7 configs on the 4 traces, with MPS concurrency fitted to
-     the card's memory (assume a 24 GB GPU);
-   - write results/screen.md with τ, R = (τ − τ_base)/(τ_TTS − τ_base),
-     update ms/round and state MB;
-   - commit and push;
-   - pause the instance via the JarvisLabs CLI/API (ask me for the API
-     token). If that isn't possible, print a loud DONE so I can pause
-     it by hand.
-   Dry-run it end to end on CPU with the tiny model before any GPU
-   resume.
-E. Pre-register in RUNLOG.md before the GPU run:
-   - best arm R ≥ 0.5: promising; we run the full held-out test later;
-   - R < 0.25: stop this line;
-   - in between: report and ask.
-   Note it's tuned on the same 4 traces, so R is optimistic.
+The user's plan is quoted in the session transcript; its content is summarised here. **Before any GPU run:** (1) the
+user confirms the budget (D), (2) pre-register in RUNLOG.md. Fixed: the 49-trace test set, the loop-cut rule, the bins
+(0–2K, 2–4K, 4–8K, ≥ 8K), the bootstrap (paired, stratified, B = 10,000, seed 0). Reuse saved S2, TTS stride 1, S2+cal
+and full numbers (do not rerun them).
 
-GPU SESSION: I'll resume on a cheap 24 GB GPU and run only
-scripts/run_screen.sh.
+- **A. SharpDraft baseline** (2610.05106): done so far = paper read (NOTES.md §14: Eq. 5, constants k 32, s 5,
+  β_max e^0.5, N0 2048 for Qwen, BF16 rule Eq. 18; no public code). To do: `SharpDraft` class in rlsdk/adapters.py
+  (query scale after q_norm via Eq. 18, all 5 layers, N = keys actually visible incl. the 16 block slots, same count
+  for every arm), CPU tests (g(N0) = 1, cap, scale 1 = baseline bit-exact, q-scaling = logit-scaling vs a reference
+  softmax), sanity anchor on the 4 reference traces (τ clearly above baseline, gain growing with position; else stop).
+- **B. Arms on the 49 test traces:** 1 SharpDraft (full context); 2 SharpDraft + S2; 3 SharpDraft + S2+cal; 4 cal-full
+  (calibrate in the full-context layout, same data/steps/lr, run without window); 5 TTS stride 1 + cal (S2 layout).
+- **C. Readings** (fixed by the user; see the transcript): arm 1 within CI of S2+cal → contribution = calibration +
+  selection, not the window; arm 3 beats S2+cal and arm 1 (lower CI > 0) → complementary; arm 4 within CI of S2+cal →
+  window/S2 layout adds nothing beyond calibration; arm 5 > S2+cal → report it; claim stays "matches or beats TTS at
+  zero online cost". *Make "within the CI" precise when pre-registering* (proposal: paired CI of arm − S2+cal contains 0).
+- **F. Thinking-mode drafter** `jgeuter/qwen3-4b-dpard-thinking-b16` (3 layers, b16): check it loads in the DFlash
+  path (block layout, target feature layers; note differences, do not force); arms baseline, + S2, + TTS stride 1
+  lr 1e-5 (cut its TTS first). Reading: its baseline τ ≥ S2+cal → calibration gain is available by retraining on
+  thinking data; lead with S2 and the hybrid. Read D-PARD/D-PACE and compare its loss with our calibration KL (NOTES).
+- **H. D-PACE slot weights** (2605.18810) as a calibration variant: detached acceptance-weighted weights (Eq. 8,
+  α = 0.5; Eq. 8 and App. B.1 differ — use Eq. 8), soft KL kept; same data/steps/lr; one fine-tune; S2 layout on 49.
+- **E, G, I. Related work** in NOTES.md: SharpDraft, H-Spec, Strong Drafts Need Compact Memories, Draft-OPD — done
+  (§14, from abstracts); still to read: Windowed-MTP (2607.21535), Attention Drift (2605.09992), AngelSpec (2607.25852,
+  Table 6: thinking-mode mismatch), D-PACE (2605.18810) / D-PARD (slot weighting).
+- **J.** Done (NOTES §14): SharpDraft cites TTS; Full Adaptation = Adam lr 5e-5, stride 5; "no speedup over Frozen"
+  holds for Qwen3-8B (1.472× vs 1.489×), **not for Qwen3-4B** (1.886× vs 1.491×).
 
-## Notes for implementing the NEXT SESSION steps
+**Findings that change the plan (raise with the user before pre-registering):**
+1. **SharpDraft is ≈ a no-op in the S2 layout.** From our logged visible-key counts (N = visible context + 16):
+   AIME β̂ = 1 in 100% of rounds; LCB β̂ > 1 in 59%, mean 1.014, max 1.093. Arms 2 and 3 therefore equal S2 / S2+cal
+   exactly on AIME (scale 1 = bit-exact, to be unit-tested) → run them on the 26 LCB traces only (≈ half the cost)
+   and state AIME by construction; or drop arm 2. In the full-context layout β̂ is active (mean 1.22–1.25, max 1.44;
+   the e^0.5 cap is never reached within 16K).
+2. **Budget D underestimates the TTS-type arms.** TTS stride 1 on the 49 test traces took ≈ 3.0 A30-h (session 2,
+   phase t1_tts); S2-context TTS has ≈ 56 ms/round of updates vs 70 → arm 5 ≈ 2.5 A30-h (not 1.3); F's TTS arm
+   similar (≈ 2.0, 3 layers). cal-full (arm 4) with the same 1,415 × 16 anchors in the full-context layout feeds
+   ≈ 2–5× more context rows per anchor (CPU gather + fc/k/v) → ≈ 1.2–1.6 A30-h of fine-tuning (not 0.75) + ≈ 0.7 run.
+3. **Cross-GPU reuse.** Reused A30 numbers vs new arms on a different GPU mix bf16 hardware effects into paired
+   contrasts whose CIs are ±0.02–0.03. Run a hardware anchor first: S2 and S2+cal on the 4 reference traces on the new
+   GPU (≈ 0.1 h) vs the A30 values (S2 4.231, S2+cal 4.540); if they differ by > 0.01 τ, rerun S2+cal (and S2) on the 49.
+4. **Memory:** calibration and every TTS arm need ≥ 24 GB with bf16 support (an L4 24 GB works; a 16 GB card or a
+   T4 without bf16 does not).
 
-- The 4 screen traces = the TTS reference set above (2 AIME + 2 LCB, none dropped, all non-looping):
-  `aime24_II_14, aime24_I_10, lcb_abc393_d, lcb_arc191_d`. τ_base and τ_TTS for R come from the existing
-  `results/raw/{trace}__baseline__default.jsonl` and `{trace}__tts__lr=3e-05.jsonl` on these 4 traces.
-- 7 screen configs = KL-bias α ∈ {0.005, 0.01, 0.025} (ρ = 0.9) + KL-linear lr ∈ {1e-7, 1e-6, 1e-5} + slot-1 RLS.
-- W = target lm_head weight (tied embeddings, [151936, 2560]); p_i = softmax(W h*_{t+i−1}), q_i = softmax(W z_i);
-  w_i = exp(−(i−1)/7) (`rlsdk.adapters.dflash_position_weights`). Adapters plug into `simulate()` via
-  `apply(z, slots)` / `update(z, h, slots, rnd)`; `rnd.target_logits` exists only for TTS today — compute W h* in
-  the adapter (or extend replay to pass target logits for all methods).
-- Memory on 24 GB: a light worker needs ≈ 3.8 GB, a teacher-forced pass ≈ 10.7 GB transient (serialised by the TF
-  lock); KL arms need a few hundred MB more for the [m, V] fp32 softmaxes. 3 light workers fit.
-- 24 GB cards may lack MPS permission; `pool.py` works without MPS (just less concurrency gain).
-- Dry-run on CPU: `rlsdk.run --tiny --device cpu` exercises the same adapter paths (see `tests/test_resume.py`).
+**Revised estimates (A30-h; slower cards scale up — L4 ≈ 1.5–2× A30 time):** A coding + tests ≈ 0.5 (CPU-only box
+possible), anchor 0.15; hardware anchor 0.1; arm 1 ≈ 0.7 (baseline-cost replay); arms 2, 3 ≈ 0.25 each (LCB only) or
+0.4 each (all 49); arm 4 ≈ 1.9–2.3; arm 5 ≈ 2.5; F: load check ≈ 0.05, baseline ≈ 0.5, + S2 ≈ 0.4, + TTS ≈ 2.0;
+H ≈ 0.75 (fine-tune 0.35 + run 0.4). A + B (all five arms, LCB-only 2/3) ≈ 6.6; without arm 5 ≈ 4.1; + F without its
+TTS ≈ +1.0; + H ≈ +0.75.
 
-## Diagnostic status
+**Earlier open questions, still open:** real (non-replay) loop check on 3 dev traces (≈ 0.5 A30-h + ≈ 1 h coding;
+results/loop_check_proposal.md); a second drafter family (EAGLE-3 on Qwen3-8B) and a Llama target (≈ 6–8 GPU-h per
+pair on a ≥ 40–48 GB card, plus harness work). cal-full = old (a), TTS + cal = old (b).
 
-Finished (`results/adapt_diag_aime24_I_13.json`, CPU, first 3,000 output tokens of aime24_I_13, along the baseline
-trajectory; shadow adapters updated with valid pairs only and scored out-of-sample on all 15 slots of each next round):
+## Budget record
 
-| arm | hidden-state L2 error ‖h* − z′‖² | draft accuracy (all slots) | slot 1 accuracy |
-|---|---|---|---|
-| baseline | 27,314 | 31.7% | 76.4% |
-| hidden-residual bias ρ = 0.99 | 17,644 | 26.6% | 71.8% |
-| RLS n0 = 128, λ = 0.999 | 14,101 | 27.7% | 70.3% |
-| RLS n0 = 1024, λ = 1 | 13,985 | 28.7% | 71.2% |
-
-Target sanity: argmax(lm_head(h*)) = next token at 99.2% of positions. RLS works as a regressor (≈ 49% lower
-out-of-sample L2) yet lowers accuracy at every slot: least squares on hidden states is not aligned with the drafter's
-argmax decisions. This is why the KL-based arms in the next session are worth screening. It is a real effect, not a
-bug.
-
-## Reference numbers for the screen (4 traces, truncated variant; from `results/dev_interim.md`)
-
-τ_base = 3.017, τ_TTS(lr = 3e-5) = 4.201. Best RLS on these 4 traces: τ = 2.724 (R = −0.25); best hidden-residual bias:
-τ = 2.306 (R = −0.60).
-
-## JarvisLabs API token (for step D: pausing the instance)
-
-Stored at `/home/.jarvislabs_token` (mode 600, outside the repo; never commit it or echo it into logs). Read it in
-`run_screen.sh` with `JL_TOKEN=$(cat /home/.jarvislabs_token)`. Not yet tested against the API: verify the pause
-call in the CPU dry-run (step D) without actually pausing, e.g. by listing instances first.
+Old GPU 2.991 GPU-h; A30 session 2: ≈ 8.98 A30-h; A30 session 3 (this one): ≈ 4.89 A30-h (03:39:37 → pause ≈ 08:33 UTC; cap 5,
+extended to ≈ 6 by the user for "full" on test).

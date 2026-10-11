@@ -1,5 +1,133 @@
 # Kill test summary: closed-form (RLS) test-time drafter adaptation vs TTS
 
+<!-- S3 BEGIN -->
+
+## Session 3 (A30): one-time thinking-mode calibration (S2+cal) and exact batched pooled TTS — held-out
+
+All pre-registered in RUNLOG.md (session 3) before any run; decision variant (flagged traces truncated at loop
+onset, 1 dropped trace excluded → 49 test traces), τ = mean of AIME and LCB pooled τ, paired bootstrap 95% CIs
+(stratified by dataset, B = 10,000, seed 0). Replay, A30. Full reports: `results/s3_heldout.md`,
+`results/s3_screen.md`, `results/batched.md`.
+
+### Headline
+
+- **S2+cal beats TTS stride 1 at zero online cost: τ 4.408 vs 4.208, +0.200 [+0.179, +0.222]** (update ms/round 0 vs
+  69.6). S2+cal − S2 = +0.339 [+0.308, +0.371]. S2+cal = the S2 drafter context with the released DFlash weights
+  fine-tuned once, offline, on thinking-on calibration traces; no updates at inference.
+- **full** (S2+cal + exact batched pooled TTS stride 10, lr 1e-5): τ 4.548, **+0.340 [+0.319, +0.360] vs TTS**, +0.140
+  [+0.122, +0.157] vs S2+cal — beats TTS, **but not "cheaper"**: amortized update 11.36 ms/round = 16.3% of TTS stride 1
+  (criterion ≤ 10%).
+- **Fairness (Step 6, run):** TTS stride 1 with a full context-cache refresh after every step vs the stale cache, 4
+  reference traces: **refresh − stale = −0.07%** (τ 4.316 vs 4.319; stop threshold +2%). The stale-cache TTS used in
+  every comparison is therefore a fair baseline.
+
+| arm | τ | τ 0–2K | τ 2–4K | τ 4–8K | τ ≥8K | update ms/round |
+|---|---|---|---|---|---|---|
+| S2 | 4.069 | 3.516 | 4.020 | 4.185 | 4.416 | 0 |
+| TTS stride 1 | 4.208 | 3.693 | 4.396 | 4.213 | 4.483 | 69.63 |
+| **S2+cal** | **4.408** | 3.779 | 4.370 | 4.578 | 4.756 | **0** |
+| full | 4.548 | 3.802 | 4.483 | 4.741 | 5.007 | 11.36 |
+
+### Where the gain is (per output-position bin, S2+cal − TTS stride 1)
+
+- **S2+cal closes the early gap:** 0–2K +0.086 [+0.064, +0.109] (now above TTS); 2–4K −0.026 [−0.068, +0.012], i.e.
+  **93% of S2's 2–4K deficit vs TTS closed** (S2 was 0.376 below TTS there).
+- **The largest gains are late:** 4–8K **+0.364** [+0.324, +0.413], ≥ 8K **+0.273** [+0.232, +0.332].
+- Calibration adapts the drafter **both to thinking-mode text and to the S2 context layout** (it is trained in S2
+  layout); **the split between the two is not measured yet** (open question a, cal-full).
+- full − TTS by bin: +0.109, +0.087, +0.528, +0.524 (all CIs > 0).
+
+### Per dataset (95% CIs)
+
+| arm | τ AIME (n = 23) | τ LCB (n = 26) |
+|---|---|---|
+| S2 | 4.276 [4.087, 4.471] | 3.862 [3.755, 3.964] |
+| TTS stride 1 | 4.353 [4.151, 4.561] | 4.063 [3.943, 4.188] |
+| S2+cal | 4.607 [4.384, 4.838] | 4.209 [4.091, 4.330] |
+| full | 4.722 [4.497, 4.951] | 4.374 [4.241, 4.510] |
+
+| contrast | AIME | LCB |
+|---|---|---|
+| S2+cal − TTS stride 1 | +0.254 [+0.225, +0.288] | +0.146 [+0.115, +0.172] |
+| S2+cal − S2 | +0.331 [+0.288, +0.376] | +0.347 [+0.302, +0.395] |
+| full − TTS stride 1 | +0.369 [+0.338, +0.399] | +0.311 [+0.282, +0.336] |
+
+**Reference traces and test set:** the 4 reference traces used to pick the calibration lr (aime24_II_14, aime24_I_10,
+lcb_abc393_d, lcb_arc191_d) are all **dev** traces; **none is among the 49 test traces**, so the test contrasts above
+need no exclusion (asserted in `scripts/check_cal_disjoint.py`).
+
+### Calibration data: disjointness check (assertions that ran, `scripts/check_cal_disjoint.py`)
+
+Output (`results/cal_disjoint.txt`):
+```
+calibration problems: 60 (AIME 30, LCB 30); dev/test problems: 62
+assert no shared trace ids: OK (0)
+assert no identical prompts: OK (0)
+assert no shared first 300 chars of the problem statement: OK (0)
+assert max 8-word-shingle Jaccard (statement) < 0.5: OK (max 0.161, aime25_22 vs aime24_II_04)
+excluded near-duplicate(s) not in the set: ['abc388_g'] (abc388_g ~ test abc388_e)
+assert the 4 reference traces are dev, not test: OK (aime24_II_14, aime24_I_10, lcb_abc393_d, lcb_arc191_d)
+assert traces/traces_cal.jsonl holds exactly these 60 problems: OK
+ALL DISJOINTNESS ASSERTIONS PASSED
+```
+Set: AIME 2025 (MathArena/aime_2025, 30) + 30 LCB v6 hard drawn with seed 0 from the 48 unused hard problems;
+`lcb_abc388_g` (same statement as test problem abc388_e, harder variant) was replaced by the next seeded draw
+(`lcb_abc396_f`) before generation.
+
+### Calibration cost (one-time per drafter) and the frozen checkpoint
+
+- **Traces:** 60 greedy thinking-on traces, 8K cap, vLLM: 04:37:50–04:54:08 UTC = **0.27 A30-h**, 475,789 output
+  tokens; 59 used (1 dropped by the loop rule; 6 loop-flagged, truncated), **443,895 output tokens**.
+- **Fine-tuning:** 1,415 Adam steps × 16 random anchors (22,640 anchors × 15 supervised slots), S2 layout, DFlash-
+  weighted KL(target ‖ draft). Run with both lrs: 04:54:08–05:32:52 = **0.65 A30-h** (teacher-forced passes 95 s,
+  20-step timing probe, lr 3e-6 1,165 s, lr 1e-5 1,039 s). **lr chosen: 1e-5** (S2+cal τ on the 4 reference traces
+  4.540 vs 4.468 at 3e-6). The chosen recipe alone ≈ 0.33 A30-h; **one-time total per drafter ≈ 0.6 A30-h**
+  (traces + one fine-tune; 0.92 A30-h as run, with the lr search). No per-request cost.
+- **Frozen checkpoint:** `ckpt/cal/lr1e-05/model.safetensors`, **sha256
+  `cc25cc15a3782b56e2a5be9d1a17bbaf74718be966413447b76a5b728e8ca5d7`** (bf16 `save_pretrained`; not in git). Rerun:
+  `bash scripts/rerun_s2cal.sh`.
+
+### Screen (Step 4, 4 reference traces; pre-registered readings)
+
+S2 4.231, TTS stride 1 (A30) 4.319, S2+cal 4.540, full 4.678. Mode mismatch **supported** (S2+cal closes 103% of S2's
+0–4K deficit vs TTS; ≥ 50% needed); full **promoted** (≥ τ_TTS + 0.10, beats TTS on 4/4); S2+cal **promoted**
+(≥ τ_TTS). The lr was chosen on these same traces (optimistic); the held-out test above is the unbiased check.
+
+### Exact batched pooled update (Step 1, 16 T2 traces)
+
+Batched stride 10 τ 4.426 vs the per-round pooled hybrid 4.429 (check |Δ| ≤ 0.02: **pass**); batched − TTS stride 1
++0.127 [+0.060, +0.173]. Amortized update **11.49 ms/round** (per-round pooled: 43.0; TTS stride 1: 69.6) = 16.5% →
+**≤ 10% cost criterion not met.** Gradient exactness vs the per-round accumulated gradient: tiny fp32 ≈ 1e-6, real
+drafter fp32 1.6e-4. Stride 20 (exploratory): 15/16 traces, see `results/batched.md`.
+
+### Deviations (all logged in RUNLOG before the affected results were read)
+
+- Batched update: two OOM fixes on long-prompt LCB traces (micro-batching, then a grouped-query attention for the
+  batched forward); same maths, re-validated by tests; the stride-10 runs used for Step 1 are all from the final code.
+- Calibration set: one near-duplicate LCB problem replaced (above).
+- "full" on test ran in two processes (an OOM in a teacher-forced pass after 28 traces; resumed after a gc fix);
+  each process ran alone on the GPU.
+- Budget: cap 5 A30-h, extended by the user to ≈ 6 for "full" on test.
+
+### Open questions (next phase, not run; in order — estimates in A30-h)
+
+a. **cal-full:** calibrate in the full-context layout, run without the window. Separates layout adaptation from
+   thinking-mode adaptation; decides whether S2 is a contribution or only calibration is. ≈ 1.9–2.3 (fine-tune
+   1.2–1.6: full-context anchors carry 2–5× more context rows; run ≈ 0.7).
+b. **TTS + cal:** TTS stride 1 on top of the calibrated weights. The strongest baseline; a reviewer will ask for it.
+   ≈ 2.5 on the 49 traces (S2 layout; TTS stride 1 took ≈ 3.0 in full context), ≈ 0.9 on the 16 T2 traces.
+c. **Real (non-replay) loop check** on 3 dev traces (output identity, real vs replay τ, tokens/s). ≈ 0.5 + ≈ 1 h of
+   integration coding.
+d. **A second drafter (EAGLE-3 on Qwen3-8B) and one Llama target.** ≈ 6–8 GPU-h per pair on a ≥ 40–48 GB card (8B
+   target + drafter + TTS state do not fit 24 GB), plus harness work (EAGLE-3 multi-step / tree drafting needs its own
+   replay derivation and real-vs-replay validation).
+
+The user's next-phase plan (SharpDraft baseline, thinking-mode drafter, D-PACE weights; HANDOFF.md) supersedes
+a–b as arms 4–5 there.
+
+<!-- S3 END -->
+
+
 <!-- HELDOUT BEGIN -->
 
 ## Held-out test (A30, 49 test traces) — leads with S2 and the window

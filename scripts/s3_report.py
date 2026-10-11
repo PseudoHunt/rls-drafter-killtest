@@ -221,6 +221,43 @@ def heldout(args):
         lines.append(f"| {a.label} | {fmt_ci(*d_t)} | {fmt_ci(*d_s)} | {'YES' if d_t[1] > 0 else 'no'}{caveat} | "
                      f"{u:.2f} ({100 * u / tts_u:.1f}%) | {'YES' if u <= 0.1 * tts_u else 'no'} |")
     lines.append(f"\nTTS stride 1 amortized update ms/round on these traces: {tts_u:.2f}.")
+    # per dataset: τ with 95% CI for every arm, and contrasts (bootstrap within the dataset's traces)
+    every = [s2, tts] + arms
+    lines += ["", "## Per dataset (95% CI, bootstrap over that dataset's traces)", "",
+              "| arm | τ AIME | τ LCB |", "|---|---|---|"]
+    by_ds = {ds: sorted(i for i in ids if tts.ds[i] == ds) for ds in DATASETS}
+    boots = {ds: Boot(by_ds[ds], tts.ds, 10000) for ds in DATASETS}
+    for a in every:
+        st = a.stats()
+        cells = []
+        for ds in DATASETS:
+            p_, lo, hi = boots[ds].ci(lambda d: tau(st, d))
+            cells.append(f"{p_:.3f} [{lo:.3f}, {hi:.3f}] (n={len(by_ds[ds])})")
+        lines.append(f"| {a.label} | " + " | ".join(cells) + " |")
+    lines += ["", "| contrast | AIME | LCB |", "|---|---|---|"]
+    for a in arms:
+        for b in (tts, s2):
+            sa, sb = a.stats(), b.stats()
+            cells = [fmt_ci(*boots[ds].ci(lambda d: tau(sa, d) - tau(sb, d))) for ds in DATASETS]
+            lines.append(f"| {a.label} − {b.label} | " + " | ".join(cells) + " |")
+    # per output-position bin: arm − TTS, and the share of S2's deficit vs TTS that the arm closes
+    lines += ["", "## Per bin vs TTS stride 1 (point estimates; CI in brackets)", "",
+              "| arm | " + " | ".join(b[0] for b in BINS) + " |", "|---|" + "---|" * len(BINS)]
+    for a in arms:
+        cells = []
+        for _, lo, hi in BINS:
+            sa, st, ss = a.stats(lo, hi), tts.stats(lo, hi), s2.stats(lo, hi)
+            d = boot.ci(lambda dd: tau(sa, dd) - tau(st, dd))
+            gap = tau(st, ids) - tau(ss, ids)
+            closed = (tau(sa, ids) - tau(ss, ids)) / gap if gap > 0 else float("nan")
+            below = d[0] < 0  # arm still below TTS in this bin: report the share of S2's deficit it closes
+            cells.append(fmt_ci(*d) + (f"; closes {100 * closed:.0f}% of S2's deficit ({gap:+.3f})"
+                                       if gap > 0 and below else ""))
+        lines.append(f"| {a.label} − TTS | " + " | ".join(cells) + " |")
+    ref_in_test = sorted(set(REF) & set(ids))
+    lines.append("\nReference traces (used to pick the calibration lr) among these test traces: "
+                 + (", ".join(ref_in_test) if ref_in_test else "none (all 4 are dev traces; asserted in "
+                    "scripts/check_cal_disjoint.py)") + ".")
     open(R("results/s3_heldout.md"), "w").write("\n".join(lines) + "\n")
     print("\n".join(lines))
 

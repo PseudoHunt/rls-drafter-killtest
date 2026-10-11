@@ -13,6 +13,7 @@ import os as _os
 
 _os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")  # deterministic cuBLAS (TTS updates)
 import fcntl
+import gc
 import json
 import os
 import socket
@@ -153,6 +154,7 @@ def main(argv=None):
             ids = torch.tensor(tr["prompt_ids"] + tr["output_ids"], dtype=torch.long, device=device)
             if cached[0] != tr["trace_id"]:
                 cached = (None, None, None)
+                gc.collect()  # free the previous jobs' adapter state (reference cycles) before the TF pass
                 if device.type == "cuda":
                     torch.cuda.empty_cache()
                     torch.cuda.reset_peak_memory_stats(device)

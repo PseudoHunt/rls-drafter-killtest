@@ -1,0 +1,9 @@
+calibration problems: 60 (AIME 30, LCB 30); dev/test problems: 62
+assert no shared trace ids: OK (0)
+assert no identical prompts: OK (0)
+assert no shared first 300 chars of the problem statement: OK (0)
+assert max 8-word-shingle Jaccard (statement) < 0.5: OK (max 0.161, aime25_22 vs aime24_II_04)
+excluded near-duplicate(s) not in the set: ['abc388_g'] (abc388_g ~ test abc388_e)
+assert the 4 reference traces are dev, not test: OK (aime24_II_14, aime24_I_10, lcb_abc393_d, lcb_arc191_d)
+assert traces/traces_cal.jsonl holds exactly these 60 problems: OK
+ALL DISJOINTNESS ASSERTIONS PASSED

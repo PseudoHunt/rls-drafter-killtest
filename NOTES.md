@@ -282,3 +282,74 @@ wherever keys are selected.
   heads, mean over the 3 layers, normalised to sum 1 over 0 .. t'−1 (`target_attn.key_mass`; = eager attention, tested).
 - The bias enters SDPA as an additive mask [1, 1, Q, K] (drafter dtype) through the same attention hook as top-k
   (`window.topk_attention`); unmasked SDPA otherwise.
+
+## 13. Session 3: exact batched pooled TTS update and offline thinking-mode calibration
+
+**Batched pooled update** (`rlsdk/batched.py`, TTS config `batched: true`, needs `pool: true` and ctx `s2`/`window`).
+Parameters change only at Adam steps, so the k rounds of a pooled step share parameters. Each round stores: its new
+context rows (target features; their K/V are rebuilt in-graph with grad, exactly as the per-round gradient forward
+does), the block embeddings and query positions, the indices of its older visible rows in the WindowCache buffers
+(append-only: a row is written once, when first fed, so the indices read exactly the stale K/V the round saw), its RoPE
+cos/sin, and the valid-slot target logits in bf16 (identical to the per-round path's head(h*)). At the step: micro-
+batches of `micro` (default 10) rounds, right-padded + bool-masked, one forward/backward each, gradients summed in fp32
+on the masters. The forward uses `gqa_attention` (no repeat_kv; fp32 scores) — transformers' SDPA path expanded K/V to
+32 heads and held fp32 copies per pooled round, which OOMed on long-prompt LCB traces. Exactness: fp32 tiny ≈ 1e-6,
+real drafter in fp32 1.6e-4 (vs per-round accumulated gradient); bf16 differs by 3–6% (rounding of one summed bf16
+gradient vs separately rounded ones); run-level τ within 0.003 of the per-round pooled hybrid on 16 traces.
+`warm: N` (contingency arm, unused): per-round steps while the round starts before output position N.
+
+**Calibration** (`rlsdk/calibrate.py`). Teacher-forced S2 layout at a random anchor t: the visible set is chosen by
+`WindowCache.begin` itself (prompt + last 1024 + 16 far chunks by target layers 17/25/33 row t−1); with contiguous
+positions this equals the stock DFlash forward on the visible rows with position ids 0..L+15 and no cache (tested
+equal to the replay's drafting z). Loss = DFlash-weighted KL(target ‖ draft) on all 15 slots. Features held in CPU RAM.
+`--budget-h` fixes the step count from a 20-step timing probe. Checkpoints are `save_pretrained` dirs under `ckpt/`
+(not in git; sha256 in RUNLOG); use them with `rlsdk.pool --draft ckpt/cal/lr1e-05`.
+
+## 14. Next phase: SharpDraft baseline and related work (read 2026-10-11; nothing implemented or run yet)
+
+**SharpDraft** (arXiv 2610.05106, 4 Oct 2026, "Accelerating Long-Context Speculative Decoding with Cardinality-Aware
+Query Scaling"; read from the PDF, §3.2–3.3, App. A.3–A.4, B.1). Deployed rule, **Eq. (5)**:
+
+    r_t = max{ (N_t − k) / (N0 − k), 1 },     β̂_t = min{ β_max, 1 + log(r_t) / s },     q_t ← β̂_t · q_t
+
+- Constants (§3.2 and App. B.1): **k = 32, s = 5, β_max = e^0.5, N0 = 2048 for Qwen/Llama** (4096 for GLM). N0 is "a
+  fixed experimental proxy, not an estimate of the training-time visible-Key distribution", informed by a separate
+  held-out MATH-500 replay comparison. Below N0, β̂ = 1. s = 5 chosen from a sweep s ∈ {3,4,5,6,8} (§4, Fig. 5a).
+- Application (§3.3): queries rescaled **after Q-normalization**, the **same scale in all five draft layers**; affects
+  scores against both context and block keys; cached context K/V unchanged. **N_t = visible persistent-context keys +
+  current draft-block keys, excluding masked and padded positions**; "with a fixed sliding window, the count and scale
+  saturate". (RoPE is linear, so scaling before or after rotation is the same.)
+- BF16 arithmetic (App. B.1, **Eq. (18)**): y′ = y + cast_BF16(float(y)·(β̂ − 1)) on the BF16 Q-norm output y (gain delta
+  and product in FP32, cast before the add); norm weights unchanged.
+- Reference-inverse form it approximates: Eq. (11)–(12) (A.3); Taylor/fixed-slope link Eq. (16)–(17).
+- Code: no public repository is linked in the paper (checked the full text, 2026-10-11) → implement Eq. (5)/(18).
+- Their primary model includes **Qwen3-4B with its DFlash drafter** (our checkpoint family): Table 1.
+- **Implication for our layouts (computed from our logged visible-key counts, test traces, N = visible context + 16):**
+  S2 layout — AIME β̂ = 1 in 100% of rounds (exact no-op), LCB β̂ > 1 in 59% of rounds, mean 1.014, max 1.093; full
+  context — β̂ > 1 in 84% (AIME) / 90% (LCB) of rounds, mean 1.215 / 1.250, max 1.44 (cap e^0.5 = 1.649 never reached
+  within 16K). So "SharpDraft + S2" ≈ S2 on these traces by construction.
+
+**Related work (one line each; from the arXiv abstracts, 2026-10-11):**
+- *SharpDraft* (2610.05106): training-free query scaling by visible-key count over the full drafter context; we
+  instead change *which* keys the drafter sees (window + target-guided far chunks) and remove the thinking-mode
+  mismatch by one offline calibration — complementary in principle, but S2 keeps N near N0 so its scale stays ≈ 1.
+- *H-Spec* (2609.24197): a trained hybrid Mamba-attention parallel drafter that reuses target KVs in place plus the
+  target hidden state at the last position, without a drafter-side KV cache; a new trained drafter for memory/
+  concurrency, whereas we keep the released DFlash drafter and only select its context and calibrate it once.
+  (The "2048-token sliding window over target KV" detail was given to us; not visible in the abstract — check the
+  paper before citing it.)
+- *Strong Drafts Need Compact Memories* (2608.30252): a strong independent draft with compressed draft-side KV memory
+  built by a trained adaptor for long prefixes; we use no adaptor or compression, only target-attention-guided
+  selection of raw context rows for an existing block drafter.
+- *Draft-OPD* (2605.29343): on-policy distillation of draft models (target supervises draft-induced states) to fix
+  the SFT offline-to-inference mismatch; our calibration is off-policy, teacher-forced on target traces, targets a
+  thinking-mode distribution shift, and costs ≈ 0.6 A30-h once per drafter.
+
+**SharpDraft's online-adaptation baselines (item J; App. B.1, Table 1, from the PDF):** they cite TTS (Kumar, Sanghavi,
+Das, arXiv:2605.09329; §2 and §4: "a setting similar to that of Test-Time Speculation"). "Full Adaptation" =
+full-parameter online adaptation with a forward-KL objective, **Adam lr 5e-5, betas (0.9, 0.999), update stride 5
+verification rounds**; LoRA: AdamW lr 1e-3, betas (0.9, 0.95), stride 5. Their metric is end-to-end speedup vs
+target-only AR *including* training time, not τ. Full Adaptation vs Frozen, overall: **Qwen3-4B 1.886× vs 1.491×
+(it helps; AIME-26 1.368× vs 1.267×)**, Qwen3-8B 1.472× vs 1.489× (no gain), Llama-3.1-8B 1.819× vs 2.417× (worse).
+So "no speedup over Frozen" holds for the 8B models, not for Qwen3-4B (our target). Our TTS differs: lr 1e-5 (dev
+grid: 1e-5 > 3e-5 > 1e-4), stride 1, τ-based comparison.

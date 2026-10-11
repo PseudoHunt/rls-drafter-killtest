@@ -541,3 +541,46 @@ the 16-anchor batch is allowed if memory needs it (same gradient: mean over the 
 (full context) on the 49 test traces; per-trace output files, so a partial run is not wasted. Reading (fixed):
 cal-full within the CI of S2+cal → the S2 layout adds nothing on top of calibration; say so. Also reported vs TTS
 stride 1 and vs baseline. ≈ 1.2–1.6 fine-tune + 0.7 run A30-h.
+
+### Item 1 — SharpDraft: results (posted 09:26 UTC, before item 2 starts)
+
+**1d anchor (08:56:05–08:58:14, 2 light workers; results/s4_anchor.md):** released drafter, full context, 4 reference
+traces: baseline τ 3.016 → SharpDraft **3.711**; Δ by bin 0–2K +0.000, 2–4K +0.078, 4–8K +0.617, ≥ 8K +1.146; better
+on 4/4 traces → **PASS** (gain grows with output position). β̂ mean 1.218, max 1.420, 14.5% of rounds at 1, 0% at cap.
+
+**1e test arms (08:58:56–09:23:25; SD and SD+S2+cal as 2 light workers, then a second SD worker;
+results/s4_sharpdraft.md).** τ (decision variant, 49 test traces):
+
+| arm | τ | τ 0–2K | τ 2–4K | τ 4–8K | τ ≥8K | τ AIME (23) | τ LCB (26) | update ms/round |
+|---|---|---|---|---|---|---|---|---|
+| TTS stride 1 (reused) | 4.208 | 3.693 | 4.396 | 4.213 | 4.483 | 4.353 | 4.063 | 69.63 |
+| S2+cal (reused) | 4.408 | 3.779 | 4.370 | 4.578 | 4.756 | 4.607 | 4.209 | 0 |
+| **SharpDraft (SD, full context)** | **3.644** | 3.517 | 3.980 | 3.630 | 3.557 | 3.889 | 3.399 | 0 |
+| SD+S2+cal (LCB run; AIME = S2+cal by construction) | 4.410 | 3.781 | 4.369 | 4.579 | 4.761 | 4.607 | 4.214 | 0 |
+
+| contrast (paired 95% CI) | overall | 0–2K | 2–4K | 4–8K | ≥8K | AIME | LCB |
+|---|---|---|---|---|---|---|---|
+| SD − TTS stride 1 | −0.564 [−0.624, −0.502] | −0.176 | −0.416 | −0.583 | −0.925 | −0.464 [−0.537, −0.380] | −0.664 [−0.759, −0.575] |
+| SD − S2+cal | **−0.764 [−0.824, −0.702]** | −0.262 | −0.390 | −0.947 | −1.198 | −0.718 [−0.790, −0.636] | −0.810 [−0.904, −0.720] |
+| SD+S2+cal − TTS stride 1 | +0.202 [+0.181, +0.224] | +0.088 | −0.027 | +0.366 | +0.279 | +0.254 [+0.225, +0.288] | +0.151 [+0.120, +0.177] |
+| SD+S2+cal − S2+cal | **+0.002 [+0.001, +0.004]** | +0.001 [−0.000, +0.003] | −0.001 [−0.006, +0.005] | +0.002 [−0.001, +0.005] | +0.006 [+0.002, +0.010] | +0.000 (identical) | +0.005 [+0.001, +0.008] |
+| SD − baseline (reused) | +0.544 [+0.478, +0.594] | | | | | | |
+| SD − S2 (reused, released weights) | −0.425 [−0.467, −0.374] | | | | | | |
+| SD+S2+cal − SD | +0.766 [+0.705, +0.826] | | | | | | |
+
+(per-bin CIs of every contrast: results/s4_sharpdraft.md.)
+
+Scale diagnostics (decision-variant rounds): **SD, full context:** β̂ mean 1.202 (AIME 1.193, LCB 1.209), max 1.438,
+16.1% of rounds at β̂ = 1, **0% at the cap** e^0.5; visible keys N median 6,103, p90 13,216, max 18,073.
+**SD+S2+cal, S2 layout (LCB):** β̂ mean 1.014, max 1.093, 42.9% at 1, 0% at cap; N median 2,126, p90 2,426, max 3,241.
+**AIME, S2 layout: β̂ = 1 on 100% of rounds** (N ≤ 1,965 < N0, by construction; unit-tested).
+
+Readings (pre-registered):
+- **SD vs S2+cal: below** (−0.764, CI excludes 0) → the "within the CI" reading does not apply. SharpDraft recovers
+  part of the full-context decay (+0.544 over the released baseline, growing with position), but S2 alone (released
+  weights) is +0.425 above it and S2+cal +0.764.
+- **SD+S2+cal: the pre-registered "complementary" rule is met** (lower CI > 0 vs S2+cal and vs SD), **but the size is
+  +0.002 τ (0.05%)**: zero on AIME by construction, +0.005 on LCB, where β̂ averages 1.014. Reported as complementary
+  per the rule, with that magnitude stated every time; in practice S2 removes most of the dilution SharpDraft
+  corrects for (N stays ≈ N0).
+- "SharpDraft + S2" (released weights) dropped (user decision).

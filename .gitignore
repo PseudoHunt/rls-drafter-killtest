@@ -12,3 +12,4 @@ ckpt/
 results/**/.tf.lock
 results/.s3_tf.lock
 *.claim
+results/.s4_tf.lock

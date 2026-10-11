@@ -7,7 +7,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from rlsdk.data import build_input_ids, load_problems, loop_flag  # noqa: E402
+from rlsdk.data import build_input_ids, load_calibration_problems, load_problems, loop_flag  # noqa: E402
 
 
 def main():
@@ -19,13 +19,14 @@ def main():
     ap.add_argument("--no-thinking", action="store_true", help="Amendment-4 control (thinking OFF)")
     ap.add_argument("--only-split", default=None)
     ap.add_argument("--only-dataset", default=None)
+    ap.add_argument("--set", default="main", choices=["main", "cal"], help="cal: session-3 calibration problems")
     args = ap.parse_args()
 
     from transformers import AutoTokenizer
     from vllm import LLM, SamplingParams
     from vllm.inputs import TokensPrompt
 
-    problems = [p for p in load_problems()
+    problems = [p for p in (load_calibration_problems() if args.set == "cal" else load_problems())
                 if (args.only_split in (None, p["split"])) and (args.only_dataset in (None, p["dataset"]))][: args.limit]
     done = set()
     if os.path.exists(args.out):

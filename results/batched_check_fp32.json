@@ -1,0 +1,10 @@
+{
+ "dtype": "fp32",
+ "trace": "aime24_II_01",
+ "rounds": 450,
+ "steps": 45,
+ "max_rel_err": 0.0001550030554181039,
+ "median_rel_err": 1.9146548903312037e-05,
+ "steps_far_active": 15,
+ "max_rel_err_far_active": 9.914596705498091e-05
+}

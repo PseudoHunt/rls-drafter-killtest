@@ -205,7 +205,7 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
         m = min(produced, n_slots)
         rnd = None
         if m > 0:
-            rnd = SimpleNamespace(ctx=ctx, hstar=hstar, frontier=frontier, t=t, m=m)
+            rnd = SimpleNamespace(ctx=ctx, hstar=hstar, frontier=frontier, t=t, m=m, pos=t - P)
             if round_hook is not None:
                 round_hook(rnd)
             t1 = _sync(device)
@@ -232,6 +232,10 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
                 with torch.no_grad():
                     rnd.target_logits = head(h).float()
                 rnd.refresh_cache = lambda: rebuild_context_cache(drafter, cache, ctx[0:t])  # stock cache only
+                if getattr(adapter, "batched", False):
+                    from .batched import capture
+                    rnd.head = head
+                    rnd.capture = lambda: capture(cache, th_rows, noise, pos, rnd.target_logits.to(head.weight.dtype), m)
             adapter.update(z[:m], h, slots[:m], rnd)
             update_ms = (_sync(device) - t1) * 1e3
 

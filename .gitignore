@@ -8,3 +8,7 @@ __pycache__/
 ext/
 traces/
 results/*.tf.lock
+ckpt/
+results/**/.tf.lock
+results/.s3_tf.lock
+*.claim

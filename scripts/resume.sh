@@ -26,6 +26,7 @@ if command -v nvidia-smi >/dev/null && nvidia-smi >/dev/null 2>&1; then
   pgrep -f nvidia-cuda-mps-control >/dev/null || nvidia-cuda-mps-control -d
   pgrep -f nvidia-cuda-mps-control >/dev/null && echo "MPS daemon up" || { echo "RESUME WARN: MPS daemon not started"; }
   $PY -c "import torch; assert torch.cuda.is_available(); x=torch.randn(1024,1024,device='cuda'); print('torch', torch.__version__, 'GPU ok', float((x@x).abs().mean())>0)" || fail=1
+  $PY -c "import transformers, dflash; print('transformers', transformers.__version__, 'dflash ok')" || fail=1
 else
   echo "no GPU visible (CPU session)"
   $PY -c "import torch, transformers, dflash; print('torch', torch.__version__, 'transformers', transformers.__version__)" || fail=1

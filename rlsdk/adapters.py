@@ -319,7 +319,18 @@ class TTS:
         self.gamma = float(config.get("gamma", 7.0))
         self.stride = int(config.get("stride", 1))
         self.pool = bool(config.get("pool", False))
+        # batched: exact batched pooled update (rlsdk/batched.py): store each round's loss inputs, one batched
+        # forward + backward at the step. check (tests): also accumulate the per-round gradient and log the rel. error
+        self.batched = bool(config.get("batched", False))
+        self.check = bool(config.get("check", False))
+        # warm (output tokens): rounds starting before output position `warm` take a per-round Adam step (stride 1);
+        # later rounds use the batched pooled schedule (stride counted from the first post-warm round)
+        self.warm = None if config.get("warm") is None else int(config["warm"])
+        if self.warm is not None and not self.batched:
+            raise ValueError("warm is implemented for the batched pooled schedule only")
         ctx = config.get("ctx")
+        if self.batched and not (self.pool and ctx is not None):
+            raise ValueError("batched needs pool: true and a window / S2 ctx")
         if ctx is not None:
             self.ctx_window = dict(TTS_CTX[ctx])
             if self.refresh:
@@ -342,13 +353,21 @@ class TTS:
         self.n_upd = 0
         self.n_steps = 0
         self._log = {}
+        self.buf, self.ref = [], None
+        self.n_pool = 0
+        self.check_err = []
 
     def pop_round_log(self):
         out, self._log = self._log, {}
         return out
 
     def diagnostics(self):
-        return {"stride": self.stride, "pool": self.pool, "n_updates": self.n_upd, "n_steps": self.n_steps}
+        d = {"stride": self.stride, "pool": self.pool, "n_updates": self.n_upd, "n_steps": self.n_steps}
+        if self.batched:
+            d["batched"] = True
+        if self.check:
+            d["check_rel_err"] = self.check_err
+        return d
 
     def finish(self):
         for p in self.params:
@@ -365,6 +384,14 @@ class TTS:
         m = z.shape[0]
         self.n_upd += 1
         step_now = self.n_upd % self.stride == 0
+        if self.batched:
+            if self.warm is not None and rnd.pos < self.warm:
+                loss = self._run_det(lambda: self._grad(m, rnd))
+                self._step()
+                self._log = {"grad": 1, "step": 1}
+                return loss
+            self.n_pool += 1
+            return self._update_batched(m, rnd, self.n_pool % self.stride == 0)
         if not (step_now or self.pool):
             self._log = {"grad": 0, "step": 0}
             return None
@@ -381,8 +408,8 @@ class TTS:
             rnd.refresh_cache()
         return loss
 
-    def _grad(self, m, rnd):
-        """Back-propagate this round's loss; accumulate into the fp32 master grads."""
+    def _grad(self, m, rnd, into=None):
+        """Back-propagate this round's loss; accumulate into the fp32 master grads (or into the list `into`)."""
         with torch.enable_grad():
             zg = rnd.grad_forward()[:m]
             q_logp = torch.log_softmax(rnd.draft_logits(zg).float(), dim=-1)
@@ -390,12 +417,61 @@ class TTS:
             kl = (p_logp.exp() * (p_logp - q_logp)).sum(-1)  # KL(p || q) per slot
             loss = (self.weights[:m] * kl).sum()
             loss.backward()
-        for p, mp in zip(self.params, self.masters):
+        self._accumulate(into)
+        return float(loss.detach())
+
+    def _accumulate(self, into=None):
+        for i, (p, mp) in enumerate(zip(self.params, self.masters)):
             if p.grad is not None:
                 g = p.grad.float()
-                mp.grad = g if mp.grad is None else mp.grad + g
+                if into is None:
+                    mp.grad = g if mp.grad is None else mp.grad + g
+                else:
+                    into[i] = g if into[i] is None else into[i] + g
             p.grad = None
-        return float(loss.detach())
+
+    def _update_batched(self, m, rnd, step_now):
+        from .batched import batched_loss
+        self.buf.append(rnd.capture())
+        if self.check:  # reference: the per-round accumulated gradient (same trajectory)
+            if self.ref is None:
+                self.ref = [None] * len(self.params)
+            self._run_det(lambda: self._grad(m, rnd, into=self.ref))
+        if not step_now:
+            self._log = {"grad": 0, "step": 0}
+            return None
+        loss = None
+
+        def go():
+            nonlocal loss
+            loss = 0.0
+            for q in sorted({r.q for r in self.buf}):  # one batch per block size (smaller only at max_length)
+                recs = [r for r in self.buf if r.q == q]
+                with torch.enable_grad():
+                    lt = batched_loss(self.drafter, rnd.head, recs, self.weights)
+                    lt.backward()
+                self._accumulate()
+                loss += float(lt.detach())
+            if self.check:
+                num = sum(float(((mp.grad - g) ** 2).sum()) for mp, g in zip(self.masters, self.ref)
+                          if g is not None)
+                den = sum(float((g ** 2).sum()) for g in self.ref if g is not None)
+                self.check_err.append((num / den) ** 0.5)
+                self.ref = None
+            self._step()
+
+        self._run_det(go)
+        self.buf = []
+        self._log = {"grad": 1, "step": 1}
+        return loss
+
+    def _run_det(self, fn):
+        prev_det = torch.are_deterministic_algorithms_enabled()
+        torch.use_deterministic_algorithms(True)
+        try:
+            return fn()
+        finally:
+            torch.use_deterministic_algorithms(prev_det)
 
     def _step(self):
         self.opt.step()

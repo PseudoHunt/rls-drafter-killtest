@@ -287,3 +287,91 @@ committed by hand at 17:29:38 UTC (fe5ca9f) during the grace window.
 **Final status:** held-out claims — headline window R = 0.718 ≥ 0.5 YES; S2 adds value YES; S2 dominates TTS NO
 (S2 − TTS −0.139 [−0.173, −0.107]); hybrid NO (τ +0.130 [+0.063, +0.176] but update cost 61.8% > 10%). VPA not
 promoted (bias hurt monotonically; VPA − S2 = −0.049 on dev, 1/7 traces). Loop-check proposal: results/loop_check_proposal.md (not run).
+
+## Session 3 (A30, resumed 2026-10-11 03:39:37 UTC) — thinking-mode calibration + batched pooled TTS
+
+Budget: **5 A30-h for this session, from the resume at 03:39:37 UTC, idle time included.** Stop after any step if the
+projection exceeds it. Old totals unchanged (2.991 old-GPU h; 8.98 A30-h last session).
+
+**PRE-REGISTERED (2026-10-11 04:05 UTC, before any GPU run this session).**
+
+Motivation (given): on the 49 test traces, 76% of the extra rounds S2 needs vs TTS fall in the first 4K output tokens
+(0–2K 31%, 2–4K 45%), inside the drafter's training length. Hypothesis: most of it is a constant thinking-mode
+mismatch (drafter trained with thinking off), fixable once offline.
+
+**Step 1 — exact batched pooled update** (`rlsdk/batched.py`, TTS config `batched: true`). Each round stores its new
+context rows (target features), block embeddings + query positions, indices of its older visible context rows in the
+append-only WindowCache buffers (stale K/V exactly as seen, never rebuilt), its RoPE cos/sin, and the valid-slot
+target logits in bf16; at the Adam step, one padded + masked batched forward/backward. CPU tests
+(`tests/test_batched.py`, tiny model, fp32): gradient = per-round accumulated gradient at every step, max rel. error
+9.4e-7 (stride 4, 46 steps), 6.0e-7 (stride 10), 4.0e-7 (stride 20) < 1e-3; buffers append-only; negative control
+(older K/V rebuilt with current weights) breaks equality after the first step (> 1e-2); same trajectory and total
+weight change as the existing pooled path. 118/118 tests pass.
+- Run: S2 + TTS lr 1e-5, stride 10, pooled, batched on the 16 T2 traces (configs/t2_traces.txt), one TTS process alone
+  on the GPU. **Check: τ within 0.02 of 4.429** (existing per-round pooled hybrid; decision variant). A miss = an
+  implementation problem → stop and investigate before Step 3. Report amortized update ms/round (total update time ÷
+  rounds) and its ratio to TTS stride 1 (69.60 ms on these 16 traces); the ≤ 10% cost criterion is NOT loosened.
+- Exploratory (cost vs τ curve only, no decision): batched stride 20, same 16 traces, same process. "full" stays at
+  stride 10 (fixed now; a stride chosen on test traces would bias the test).
+
+**Step 2 — calibration traces**, disjoint from all 62 dev/test problems: AIME 2025 (`MathArena/aime_2025`, 30) + 30 LCB
+v6 hard drawn from the 48 unused hard problems of test6.jsonl (sorted by question_id, minus the 32 used;
+`random.Random(0).sample(unused, 30)`). Same templates (DFlash bb48ef9), Qwen3 chat template, thinking on, greedy,
+max 8,192 new tokens, vLLM 0.31. Loop flag + cut rule as Amendment 2 / §12.4 (dropped if < 1,024 output tokens
+remain). Check problem texts are disjoint from the 62.
+
+**Step 3 — one-time calibration** (offline, from the released DFlash weights). For each calibration trace (truncated
+at the loop cut): one teacher-forced target pass (context features of layers 1/9/17/25/33, h*, and the S2 attention
+rows of layers 17/25/33); features held in CPU RAM for the run, never written to disk. Training sample = an anchor t
+drawn uniformly from output positions with t + 15 ≤ last position (seed 0); drafter input in S2 layout at frontier t:
+prompt + last 1024 context positions + 16 far 32-token chunks scored by row t−1 (target layers 17/25/33), contiguous
+positions, block [s_t, MASK×15]; context K/V computed in-graph with the current weights (teacher-forced). Loss =
+Σ_{i=1..15} w_i KL(softmax(lm_head h*_{t+i−1}) ‖ softmax(lm_head z_i)), w_i = exp(−(i−1)/7). Adam (0.9, 0.999,
+ε 1e-8, no weight decay, constant lr) on fp32 masters, bf16 drafting copy. lr ∈ {3e-6, 1e-5}, same anchors and order
+for both. Number of steps fixed by a timing-only probe (no evaluation) so both lrs + teacher-forced passes fit in
+≤ 0.75 A30-h; logged before training. **lr chosen by S2+cal τ on the 4 reference traces** (static S2 replay with the
+calibrated weights); checkpoint frozen, its sha256 committed (weights under ckpt/, not in git).
+
+**Step 4 — screen, 4 reference traces** (aime24_II_14, aime24_I_10, lcb_abc393_d, lcb_arc191_d), all arms on the A30:
+S2 (existing A30 run); TTS stride 1 lr 1e-5 full context stale (new, all 4 traces); S2+cal (static); full = S2+cal +
+batched pooled TTS stride 10 lr 1e-5 (TTS state starts from the calibrated weights each trace). τ (decision variant)
+overall and per output-position bin 0–2K, 2–4K, 4–8K, ≥ 8K. Readings (fixed):
+- Mode mismatch supported if S2+cal closes ≥ 50% of S2's 0–4K τ deficit vs TTS:
+  (τ_S2cal − τ_S2)/(τ_TTS − τ_S2) on rounds starting at output position < 4096 ≥ 0.5 (deficit ≤ 0 → not supported).
+- Promote "full" to test if τ_full ≥ τ_TTS + 0.10 and full beats TTS on ≥ 3 of 4 traces. Promote S2+cal if τ_S2cal ≥ τ_TTS.
+- If mode mismatch is NOT supported, add one arm before deciding: S2 + TTS lr 1e-5 (released weights) with stride 1
+  for the first 2K output tokens, then batched pooled stride 10; it is promoted under the same rule as "full".
+- After the screen: post the table here. If any promotion rule triggers → Step 5 automatically; else stop, report,
+  pause.
+- Selection optimism: the lr for S2+cal is chosen on these same 4 traces, so S2+cal and full are optimistic here;
+  TTS's lr (1e-5) was also chosen on dev, so both sides are tuned the same way. Step 5 is the unbiased test.
+
+**Step 5 — held-out, promoted arms only, 49 test traces** (decision variant). Paired bootstrap 95% CIs (stratified by
+dataset, B = 10,000, seed 0, percentile; scripts/heldout_report.py procedure) vs TTS stride 1 (existing runs) and vs
+S2 (existing). "Beats TTS": lower CI bound of (arm − TTS) > 0. "Cheaper": amortized update ms/round ≤ 10% of TTS
+stride 1's on the 49 traces (S2+cal: 0 by construction); arm timed in a process alone on the GPU. τ per bin for every
+arm.
+
+**Step 6 — fairness, if budget allows:** TTS stride 1 lr 1e-5 with full context-cache refresh after every step vs
+stale, 4 reference traces. If refresh beats stale by > 2% τ: stop and report before any "beats TTS" claim. If Step 6
+is not run, summary.md states that the TTS comparison uses the stale cache and the refresh check was not run, and
+every "beats TTS" claim carries that caveat.
+
+| # | start (UTC) | end (UTC) | command | A30-h | cum A30-h | note |
+|---|---|---|---|---|---|---|
+| 34 | 2026-10-11 03:39:37 | 04:05 | resume, orientation, env checks (112/112 tests), awaiting go-ahead, Step 1 code + 6 CPU tests, resume.sh dflash check (GPU path), pre-registration | 0.42 | 0.42 | idle + coding counted |
+
+Notes added before any Step 1 result was read (2026-10-11 04:33 UTC):
+- Real-model exactness check of the batched update (`scripts/batched_check_fp32.py`, aime24_II_01, 450 rounds): with
+  the drafter in fp32, batched vs per-round accumulated gradient max rel. error 1.6e-4 (median 1.9e-5; 15 steps with
+  far chunks active, max 9.9e-5). In bf16 (the run setting) the same comparison gives median 2.8%, max 5.6%: bf16
+  rounding of one 10-round gradient vs ten separately rounded gradients, not an implementation error
+  (`results/batched_check_fp32.json`). The τ check above remains the run-level criterion.
+- Step 2 data hygiene (before generation): `lcb_abc388_g` (drawn) shares its statement with test problem
+  `lcb_abc388_e` (harder variant of the same task) → replaced by the next draw of the same seeded sample
+  (`lcb_abc396_f`); `rlsdk/data.py::CAL_EXCLUDE`. Max 8-gram Jaccard of any calibration prompt vs the 62 = 0.16 (template
+  phrase). List: configs/cal_traces.txt.
+- Step 3 step count: fixed automatically by `rlsdk.calibrate --budget-h 0.75` (20-step timing probe, discarded) and
+  logged as "STEPS FIXED" in ckpt/cal/train_log.txt before training; batch 16 anchors/step.
+- Step 4 contingency arm implemented in advance (TTS config `warm: 2048`; tests/test_batched.py), used only if the
+  mode-mismatch reading is "not supported". 124/124 CPU tests pass.

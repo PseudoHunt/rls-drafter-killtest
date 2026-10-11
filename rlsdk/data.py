@@ -151,3 +151,33 @@ def loop_cut(output_ids, window=32, onset_thr=0.8, min_back=512, max_frac=0.35, 
     dropped = c < min_keep
     return {"p_star": p_star, "period": period, "c": c, "kept": max(c, 0) if not dropped else 0,
             "frac_kept": repeat_fraction(output_ids[:max(c, 0)]), "dropped": dropped}
+
+
+N_CAL_LCB = 30
+CAL_EXCLUDE = {"abc388_g"}
+
+
+def load_calibration_problems():
+    """Session-3 calibration set (split "cal"), disjoint from the 62 dev/test problems: AIME 2025
+    (MathArena/aime_2025, 30) + 30 LCB v6 hard problems drawn with random.Random(0) from the 48 hard problems of
+    test6.jsonl not among the 32 used (both lists sorted by question_id). Same templates as load_problems()."""
+    from datasets import load_dataset
+    from huggingface_hub import hf_hub_download
+
+    aime = [{"trace_id": f"aime25_{int(row['problem_idx']):02d}", "dataset": "aime", "split": "cal",
+             "prompt": MATH_TEMPLATE.format(problem=row["problem"])}
+            for row in load_dataset("MathArena/aime_2025", split="train")]
+    aime.sort(key=lambda r: r["trace_id"])
+    path = hf_hub_download("livecodebench/code_generation_lite", LCB_FILE, repo_type="dataset")
+    rows = [json.loads(line) for line in open(path)]
+    hard = sorted((r for r in rows if r["difficulty"] == "hard"), key=lambda r: r["question_id"])
+    used = {r["question_id"] for r in random.Random(SEED).sample(hard, N_LCB)}
+    unused = [r for r in hard if r["question_id"] not in used]
+    # near-duplicate statements of a dev/test problem (same story, harder variant) are replaced by the next draw of
+    # the same seeded sample (RUNLOG session 3, Step 2): abc388_g shares its statement with test problem abc388_e
+    draw = random.Random(SEED).sample(unused, len(unused))
+    keep = [r for r in draw if r["question_id"] not in CAL_EXCLUDE][:N_CAL_LCB]
+    lcb = [{"trace_id": f"lcb_{r['question_id']}", "dataset": "lcb", "split": "cal", "prompt": format_lcb(r)}
+           for r in keep]
+    lcb.sort(key=lambda r: r["trace_id"])
+    return aime + lcb

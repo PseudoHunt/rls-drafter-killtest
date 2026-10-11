@@ -14,11 +14,12 @@ import time
 import torch
 import yaml
 
-from .adapters import RLS, TTS, Baseline, Bias, CtxPolicy, FarSel, KLBias, KLLinear, VPA, Window
+from .adapters import RLS, TTS, Baseline, Bias, CtxPolicy, FarSel, KLBias, KLLinear, SharpDraft, VPA, Window
 from .replay import near_tie_rate, simulate, teacher_forced
 
 METHODS = {"baseline": Baseline, "bias": Bias, "rls": RLS, "rls_slot": RLS, "tts": TTS,
-           "klbias": KLBias, "kllinear": KLLinear, "window": Window, "farsel": FarSel, "vpa": VPA}
+           "klbias": KLBias, "kllinear": KLLinear, "window": Window, "farsel": FarSel, "vpa": VPA,
+           "sharp": SharpDraft}
 
 
 def config_name(cfg):
@@ -110,7 +111,7 @@ def attn_spec(plan, target):
         spec = default_spec(target)
         return {**spec, "qk": spec["mid3"]}
     if any((p["method"] == "farsel" and p.get("config", {}).get("score") != "random")
-           or (p["method"] == "tts" and p.get("config", {}).get("ctx") == "s2") for p in plan):
+           or (p["method"] in ("tts", "sharp") and p.get("config", {}).get("ctx") == "s2") for p in plan):
         return default_spec(target)
     return None
 

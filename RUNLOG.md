@@ -470,3 +470,74 @@ pass in rlsdk/pool.py) + 08:04:21–08:27:37 (remaining 22; each process alone o
 Cumulative = wall-clock instance time since the resume (short gaps between rows included).
 
 **Session 3 total: 03:39:37 → API pause ≈ 08:33 UTC = ≈ 4.89 A30-h** (cap 5, extended to ≈ 6 by the user). Old totals: 2.991 old-GPU h; session 2 ≈ 8.98 A30-h.
+
+## Session 4 (A30, instance up 2026-10-11 08:36:37 UTC, MACHINE_ID 534736) — SharpDraft, thinking-mode drafter, cal-full
+
+Budget: **6 A30-h from 08:36:37 UTC, idle included (cap 14:36:37 UTC).** Order: item 1 (SharpDraft), item 2
+(thinking-mode drafter), item 3 (cal-full); items 4–6 of the user's list are out of this phase. Each item's table is
+posted here, committed and pushed before the next item starts. Old totals unchanged (2.991 old-GPU h; session 2
+≈ 8.98 A30-h; session 3 ≈ 4.89 A30-h).
+
+Step 0 (08:36:37–08:45): orientation; main clean = origin/main (1524300); RESUME OK; 127/127 CPU tests; frozen S2+cal
+checkpoint sha256 cc25cc15…d5ca7 matches. "full" per-bin CIs vs S2+cal computed from the saved replays (overall
+reproduces s3_heldout.md exactly): full − S2+cal +0.140 [+0.122, +0.157]; 0–2K +0.023 [+0.015, +0.031], 2–4K +0.114
+[+0.090, +0.140], 4–8K +0.164 [+0.144, +0.185], ≥ 8K +0.251 [+0.216, +0.284]. **"full" is reported as is** (user
+decision 2026-10-11): beats TTS +0.340 but 11.36 ms/round = 16.3% of TTS's update cost → fails the pre-registered
+≤ 10% rule; the 10% line is not relaxed. S2+cal stays the headline.
+
+**PRE-REGISTERED (2026-10-11 09:00 UTC, before any GPU run this session).**
+
+Fixed for every arm: the 49-trace test set, the loop-cut rule (decision variant), the bins 0–2K / 2–4K / 4–8K / ≥ 8K
+(round start output position), τ = mean of AIME and LCB pooled τ, paired bootstrap 95% CIs stratified by dataset,
+B = 10,000, seed 0 (scripts/heldout_report.Boot; per-dataset CIs bootstrap within the dataset). Reused, not rerun:
+S2, TTS stride 1 (results/raw_test), S2+cal, full (results/raw_test_cal), baseline (results/raw_test,
+results/raw_a30). Every new arm reports τ overall, per bin, per dataset, paired CIs vs TTS stride 1 and vs S2+cal,
+and update ms/round (amortized; 0 for every arm below: no updates). **"Within the CI of X"** = the paired 95% CI of
+(arm − X) contains 0; "beats X" = lower bound > 0; "below X" = upper bound < 0. No hardware anchor (same GPU type,
+A30; user decision).
+
+**Item 1 — SharpDraft** (arXiv 2610.05106; NOTES.md §14 re-checked against the PDF this session). Eq. (5):
+r = max((N − k)/(N0 − k), 1), β̂ = min(e^0.5, 1 + log r / s), k = 32, s = 5, N0 = 2048 (the paper's fixed value for
+Qwen, used as is, not tuned by us); applied after q_norm in all 5 drafter layers with the BF16 rule Eq. (18);
+weights and context K/V unchanged. N = keys visible to the query = visible context rows + verify_size block slots
+(16 except at the very end), counted the same way in every layout (full context: N = start + 16; S2: N = L + 16).
+Code: rlsdk/adapters.py::SharpDraft, rlsdk/replay.py::scaled_queries; tests/test_sharpdraft.py (14 CPU tests: g = 1
+at/below N0, formula, cap reached and held, scale 1 = baseline bit-exact in full and S2 layouts (fp32, bf16), query
+scaling = logit scaling, Eq. 18 arithmetic, N counting and the applied scale per round, S2 layout AIME scale = 1).
+- 1d **sanity anchor**, 4 reference traces (aime24_II_14, aime24_I_10, lcb_abc393_d, lcb_arc191_d), released
+  drafter, full context, vs the existing A30 baseline (results/raw_a30, τ 3.016). **Pass** iff τ_SharpDraft >
+  τ_baseline AND the gain grows with output position: Δ(4–8K) > Δ(0–2K) and Δ(≥ 8K) > Δ(0–2K). **Fail → stop item 1,
+  re-read the paper, report; no test-set SharpDraft runs.**
+- 1e **arm SD** (the arm that matters): SharpDraft, released drafter, full context, 49 test traces. Reading (fixed
+  by the user): SD within the CI of S2+cal → our contribution is calibration + target-guided selection, not the
+  window. Also reported: SD − baseline, SD − TTS stride 1, SD − S2.
+- 1e **arm SD+S2+cal**: SharpDraft in the S2 layout with the frozen S2+cal checkpoint, **26 LCB test traces only**.
+  On AIME β̂ = 1 on every round by construction (prompt ≤ 413 → N ≤ 413 + 1024 + 512 + 16 = 1,965 ≤ N0; asserted on
+  every AIME trace and every logged AIME round of the S2+cal replays, tests/test_sharpdraft.py), so its AIME replay
+  is the S2+cal replay bit for bit: the AIME rounds are taken from S2+cal and the report says so. Reading:
+  complementary iff lower CI bound > 0 vs both S2+cal and SD. "SharpDraft + S2" (released weights) is dropped.
+- Scale diagnostics (paper paragraph): per-round β̂ and N for SD (full context) and SD+S2+cal: mean, max, fraction of
+  rounds at β̂ = 1, fraction at the cap e^0.5, and the visible-key count distribution, per dataset.
+- Cost: ≈ 0.15 (anchor) + 0.7 (SD) + 0.25 (SD+S2+cal, LCB) A30-h. SD and SD+S2+cal run as two light workers side by
+  side (draft ms indicative only).
+
+**Item 2 — thinking-mode drafter** `jgeuter/qwen3-4b-dpard-thinking-b16`, pinned at commit
+78baf299fc6dc793aab6c35ce44676a980e266d1 (HF, 2026-09-21; D-PARD objective, ~101K thinking-mode samples, max len
+8192). Same DFlashDraftModel class, block 16, mask id 151669, hidden 2560, **3 layers, target feature layers
+[1, 17, 33]** (released: 5 layers, [1, 9, 17, 25, 33]) — noted, not forced: the replay uses the drafter's own
+`target_layer_ids`; no lm_head / embeddings in the checkpoint (target's are used, as for the released drafter).
+S2 selection signal unchanged (target layers 17/25/33 attention). Arms on the 49 test traces: **thinking baseline**
+(full context) and **thinking + S2** (W 1024, keep prompt, 16 far chunks, mid3). Reading (fixed): thinking baseline
+≥ S2+cal (i.e. not below: CI upper bound of (thinking baseline − S2+cal) ≥ 0) → calibration's gain is available by
+retraining; lead with S2 and the hybrid. Also reported: thinking + S2 − thinking baseline (does S2 help a
+thinking-trained drafter), and vs TTS stride 1. ≈ 0.05 load check + 0.5 + 0.4 A30-h.
+
+**Item 3 — cal-full** (gate fixed now: **start only if ≥ 2.5 A30-h remain under the 6-h cap when item 2 finishes,
+i.e. item 2 done by 12:06:37 UTC; else stop, report, pause**). Calibrate the released drafter exactly as S2+cal
+(traces/traces_cal.jsonl, same 59 traces and loop cuts, same anchors — seed 0, 1,415 steps × 16, lr 1e-5, Adam
+(0.9, 0.999, 1e-8), fp32 masters, same DFlash-weighted KL) but in the **full-context layout**: visible rows = all
+positions [0, t) at their own positions, block at t..t+15 (= the stock replay's drafter input). Micro-batching of
+the 16-anchor batch is allowed if memory needs it (same gradient: mean over the 16). Then replay **without a window**
+(full context) on the 49 test traces; per-trace output files, so a partial run is not wasted. Reading (fixed):
+cal-full within the CI of S2+cal → the S2 layout adds nothing on top of calibration; say so. Also reported vs TTS
+stride 1 and vs baseline. ≈ 1.2–1.6 fine-tune + 0.7 run A30-h.

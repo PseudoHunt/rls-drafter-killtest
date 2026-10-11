@@ -4,6 +4,7 @@ Mirrors dflash.model.dflash_generate (dflash==0.1.0) round by round, reusing its
 cache helpers and logits path.  Target-side quantities come from one teacher-forced pass and are
 only readable below the current frontier (Guarded).
 """
+import contextlib
 import time
 from types import SimpleNamespace
 
@@ -110,6 +111,28 @@ def rebuild_context_cache(drafter, cache, ctx_rows, chunk=4096):
         layer.values = torch.cat(vs[li], dim=-2)
 
 
+@contextlib.contextmanager
+def scaled_queries(drafter, beta):
+    """SharpDraft query scaling (arXiv 2610.05106 §3.3, App. B.1 Eq. 18) on every drafter layer's q_norm output y:
+    y' = y + cast(float(y) * (beta - 1)) (delta and product in fp32, cast to y's dtype before the add). Applied before
+    RoPE, which is linear, so every logit of the query (context and block keys) is scaled by beta. beta == 1: no hook
+    at all (bit-exact baseline)."""
+    if beta == 1.0:
+        yield
+        return
+    g = float(beta) - 1.0
+
+    def hook(mod, inp, y):
+        return y + (y.float() * g).to(y.dtype)
+
+    hs = [layer.self_attn.q_norm.register_forward_hook(hook) for layer in drafter.layers]
+    try:
+        yield
+    finally:
+        for h in hs:
+            h.remove()
+
+
 def _sync(device):
     if device.type == "cuda":
         torch.cuda.synchronize(device)
@@ -159,6 +182,7 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
     if hasattr(adapter, "bind_head"):  # KL arms: W = lm_head weight
         adapter.bind_head(head)
     adapter.reset(H, device)
+    qscaled = hasattr(adapter, "query_scale")  # SharpDraft
 
     rounds = []
     start, c0 = P, 0  # c0: first context position not yet fed to the drafter
@@ -175,12 +199,17 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
                 noise = _raw_input_embeddings(target, block, scale)
                 if win is None:
                     pos = torch.arange(c0, start + verify_size, device=device)[None]
-                    z = drafter(target_hidden=target_hidden, noise_embedding=noise, position_ids=pos,
-                                past_key_values=cache, use_cache=True)[:, 1 - verify_size:, :][0]
+                    n_vis = start + verify_size  # every committed position + the block (non-causal block)
+                    beta = adapter.query_scale(n_vis) if qscaled else 1.0
+                    with scaled_queries(drafter, beta):
+                        z = drafter(target_hidden=target_hidden, noise_embedding=noise, position_ids=pos,
+                                    past_key_values=cache, use_cache=True)[:, 1 - verify_size:, :][0]
                     _crop_to(cache, start)
                 else:
                     pos = cache.begin(c0, start, verify_size)
-                    with deferred_key_rope(), topk_attention(cache):
+                    n_vis = cache.L + verify_size  # visible context keys + the block
+                    beta = adapter.query_scale(n_vis) if qscaled else 1.0
+                    with deferred_key_rope(), topk_attention(cache), scaled_queries(drafter, beta):
                         z = drafter(target_hidden=target_hidden, noise_embedding=noise, position_ids=pos,
                                     past_key_values=cache, use_cache=True)[:, 1 - verify_size:, :][0]
                 slots = torch.arange(1, verify_size, device=device)
@@ -247,6 +276,8 @@ def simulate(drafter, target, ids, prompt_len, tf, adapter, max_new_tokens, bloc
             row["ctx_len"] = cache.L  # visible context rows; max query-key distance = ctx_len + n_slots
             if cache.far is not None:
                 row["far"] = len(cache.far_chunks)
+        if qscaled and n_slots > 0:
+            row["n_vis"], row["qscale"] = n_vis, beta
         if hasattr(adapter, "pop_round_log"):
             row.update(adapter.pop_round_log())
         rounds.append(row)

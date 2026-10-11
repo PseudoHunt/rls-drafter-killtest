@@ -62,6 +62,36 @@ class FarSel(Baseline):
                            "far": {"n": int(config["n"]), "score": config["score"], "seed": int(config.get("seed", 0))}}
 
 
+def sharp_scale(N, k=32, s=5.0, logcap=0.5, N0=2048):
+    """SharpDraft query scale, arXiv 2610.05106 Eq. (5): r = max((N - k)/(N0 - k), 1), beta = min(e^logcap,
+    1 + log(r)/s). N = keys visible to the query (context + draft block). beta = 1 exactly for N <= N0."""
+    r = max((N - k) / (N0 - k), 1.0)
+    return 1.0 if r == 1.0 else min(math.exp(logcap), 1.0 + math.log(r) / s)
+
+
+class SharpDraft(Baseline):
+    """SharpDraft (arXiv 2610.05106; NOTES.md §14): training-free; every query of every drafter layer is scaled by
+    beta(N) after q_norm (Eq. 18 BF16 rule, rlsdk/replay.py::scaled_queries); weights and context K/V unchanged.
+    N = visible context keys + verify_size (block slots), counted the same way in every layout.
+    config: k (32), s (5), logcap (0.5, i.e. cap e^0.5), N0 (2048), ctx ("full" | "s2": S2 layout, as FarSel
+    W=1024, keep=prompt, n=16, score=mid3)."""
+
+    method = "sharp"
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.k, self.s = int(config.get("k", 32)), float(config.get("s", 5))
+        self.logcap, self.N0 = float(config.get("logcap", 0.5)), int(config.get("N0", 2048))
+        if config.get("ctx", "full") == "s2":
+            self.ctx_window = {"W": 1024, "keep": "prompt", "positions": "contiguous",
+                               "far": {"n": 16, "score": "mid3", "seed": 0}}
+        else:
+            assert config.get("ctx", "full") == "full"
+
+    def query_scale(self, N):
+        return sharp_scale(N, self.k, self.s, self.logcap, self.N0)
+
+
 class VPA(Baseline):
     """Verifier-Prior Attention (NOTES.md §12): S2-style kept context (prompt + last W0 + top M far chunks by the
     target layers 17/25/33 signal) plus an additive bias on the kept context keys' attention logits.

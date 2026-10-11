@@ -1,5 +1,5 @@
 #!/bin/bash
-# Resume after a JarvisLabs pause. Only /home survives: repo, venvs, uv pythons and model weights all live there.
+# Resume after a pause. Only /home survives: repo, venvs, uv pythons and model weights all live there.
 # Usage:  source scripts/resume.sh      (sets env in the current shell; < 2 min, no downloads)
 export PERSIST=/home/rls_drafter_killtest
 export HF_HOME=$PERSIST/hf_cache

@@ -46,20 +46,20 @@ If `ckpt/` is gone (not in git): `python -m rlsdk.calibrate --traces traces/trac
 nondeterminism). cal-full: add `--layout full --micro 4 --out ckpt/calfull` (≈ 0.56 A30-h; sha256 of the session-4
 checkpoint `1f3ba7a4bddc1f17bade5608eebfb7e6f512b393cb61ff01d39283615a05b797`).
 
-## Where things live (only /home survives a JarvisLabs pause)
+## Where things live (only /home survives a pause)
 
 | what | path |
 |---|---|
-| repo | `/home/rls_drafter_killtest` (git `github.com/PseudoHunt/rls-drafter-killtest`, private; branch `main`) |
+| repo | `/home/rls_drafter_killtest` (git `github.com/PseudoHunt/rls-drafter-killtest`, public; branch `main`) |
 | model weights (`HF_HOME`, offline) | `hf_cache/` (Qwen/Qwen3-4B, z-lab/Qwen3-4B-DFlash-b16, jgeuter/qwen3-4b-dpard-thinking-b16 @ 78baf29; not in git) |
 | calibrated drafters | `ckpt/cal/lr1e-05/` (S2+cal, frozen), `ckpt/cal/lr3e-06/`, `ckpt/calfull/lr1e-05/` (cal-full); `summary.json`, `train_log.txt` each (not in git) |
 | traces (not in git) | `traces/traces.jsonl` (62 dev/test), `traces/traces_cal.jsonl` (60 calibration), `traces/traces_nothink.jsonl` |
 | per-round replay logs (in git) | `results/raw_test/` (baseline, window, S2, C1, C2, TTS, T2 arms, batched), `results/raw_test_cal/` (S2+cal, full), `results/raw_test_s4/` (SharpDraft), `results/raw_test_cal_s4/` (SD+S2+cal, LCB), `results/raw_test_think/` (thinking drafter), `results/raw_test_calfull/` (cal-full), `results/raw_a30*/` (dev / reference traces) |
 | papers read (not in git) | `/home/papers_dl/` (SharpDraft PDF sha256 26c7a6ac…592a, AngelSpec PDF, abstracts) |
-| venvs | `/home/envs/env-dflash` (torch 2.13, transformers 5.15, dflash 0.1.0), `/home/envs/env-vllm` (vLLM 0.31), `/home/envs/env-jl` (jarvislabs SDK); interpreters in `/home/.local/share/uv/python` |
+| venvs | `/home/envs/env-dflash` (torch 2.13, transformers 5.15, dflash 0.1.0), `/home/envs/env-vllm` (vLLM 0.31); interpreters in `/home/.local/share/uv/python` |
 | resume | `source scripts/resume.sh` → `RESUME OK` (offline HF env, env-dflash, MPS, GPU + dflash check; warns if `gh` is missing) |
 | git push | credential helper = `gh` (auth in `/home/.config/gh`, survives); the binary in `/usr/bin/gh` does **not** survive a pause — reinstall gh 2.62.0 as `resume.sh` prints (checksum-verified) |
-| JarvisLabs token | `/home/.jarvislabs_token` (mode 600, outside the repo; never print, log or commit). Pause: `/home/envs/env-jl/bin/python scripts/jl_pause.py --pause` (`--check` is read-only); uses `$MACHINE_ID` (534736 in session 4; it changes between resumes) |
+| pause | Pause the instance from the provider's console. |
 
 ## Code map
 
@@ -100,5 +100,5 @@ f. A second drafter family (EAGLE-3 on Qwen3-8B) and a Llama target (≈ 6–8 G
 
 ## Budget record
 
-Old GPU 2.991 GPU-h; A30 session 2 ≈ 8.98 A30-h; session 3 ≈ 4.89 A30-h; **session 4 (08:36:37 → API pause ≈ 10:45 UTC)
+Old GPU 2.991 GPU-h; A30 session 2 ≈ 8.98 A30-h; session 3 ≈ 4.89 A30-h; **session 4 (08:36:37 → pause ≈ 10:45 UTC)
 ≈ 2.15 A30-h** (cap 6; details and the exact end time in RUNLOG.md).

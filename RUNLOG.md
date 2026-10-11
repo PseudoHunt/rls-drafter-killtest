@@ -219,15 +219,14 @@ dev traces aime24_II_14 and lcb_abc393_d). τ, per-dataset τ, τ < 2K and τ �
 loops-included variants).
 
 **When done:** report (results/heldout.md), held-out section at the top of summary.md, loop-check proposal
-(results/loop_check_proposal.md, not run), commit, push, 10-min grace (logs/heldout/HOLD extends it), pause via the
-JarvisLabs API (scripts/jl_pause.py; token read from /home/.jarvislabs_token, never printed/logged/committed;
-read-only API check passed for instance 534259). The driver retries a failed phase once with one worker; a hard stop
+(results/loop_check_proposal.md, not run), commit, push, 10-min grace (logs/heldout/HOLD extends it), pause
+(Pause the instance from the provider's console.). The driver retries a failed phase once with one worker; a hard stop
 or second failure → report what exists, commit, push, pause.
 
 | # | start (UTC) | end (UTC) | command | A30-h | cum A30-h | note |
 |---|---|---|---|---|---|---|
 | 30b | 2026-10-10 11:12:04 | 11:19:34 | instance idle (awaiting instructions) | 0.125 | 2.634 |  |
-| 31b | 2026-10-10 11:19:34 | 11:26:46 | T0 report, JarvisLabs SDK (env-jl) + read-only API check, held-out driver + report + bootstrap, tiny dry-runs ×2 (gate-stop and full path), T2 trace draw, pre-registration | 0.120 | 2.754 |  |
+| 31b | 2026-10-10 11:19:34 | 11:26:46 | T0 report, pause tooling setup, held-out driver + report + bootstrap, tiny dry-runs ×2 (gate-stop and full path), T2 trace draw, pre-registration | 0.120 | 2.754 |  |
 
 **Before held-out launch: session total 2.760 A30-h. The held-out run (row 32, written by the driver) is capped at 9 A30-h from its own start.**
 
@@ -267,7 +266,7 @@ backward); the pooled hybrid does a backward every round, so its amortized cost 
   held-out section.
 - Execution: VPA code is developed in a separate worktree (branch vpa) so the running held-out test imports
   unchanged code; scripts/run_vpa.sh waits for the held-out driver to commit and push (GRACE), takes over the pause,
-  merges branch vpa, runs steps 1–2 (+ T3 if promoted), reports, commits, pushes and pauses via the API. It runs only
+  merges branch vpa, runs steps 1–2 (+ T3 if promoted), reports, commits, pushes and pauses. It runs only
   if the held-out run completed (not after a gate stop or failure).
 
 | # | start (UTC) | end (UTC) | command | A30-h | note |
@@ -281,7 +280,7 @@ backward); the pooled hybrid does a backward every round, so its amortized cost 
 Row 33 note: the driver's own commit failed (a git-add pathspec for absent T3 files matched nothing); the VPA files were
 committed by hand at 17:29:38 UTC (fe5ca9f) during the grace window.
 
-**A30 session total: 08:41:09 → 17:29:38 UTC = 8.808 A30-h, plus the ≈ 10-min VPA grace before the API pause
+**A30 session total: 08:41:09 → 17:29:38 UTC = 8.808 A30-h, plus the ≈ 10-min VPA grace before the pause
 (≈ 8.98 A30-h at pause).** Held-out run 5.626 A30-h (cap 9); VPA 0.397 A30-h (budget 2). Old-GPU total stays 2.991 GPU-h.
 
 **Final status:** held-out claims — headline window R = 0.718 ≥ 0.5 YES; S2 adds value YES; S2 dominates TTS NO
@@ -465,13 +464,13 @@ pass in rlsdk/pool.py) + 08:04:21–08:27:37 (remaining 22; each process alone o
 | 42 | 06:56:12 | 07:00:34 | Step 4: full on the 4 reference traces + screen report | 0.074 | 3.350 |
 | 43 | 07:00:34 | 07:15:33 | idle (expired monitor) + RUNLOG table, budget check | 0.250 | 3.600 |
 | 44 | 07:15:33 | 08:27:37 | Step 5: S2+cal and full on the test traces (incl. the OOM restart) | 1.201 | 4.800 |
-| 45 | 08:27:37 | ≈ 08:33 | reports, summary.md, HANDOFF.md, NOTES (SharpDraft paper read, related work), commit, push, API pause | 0.09 | ≈ 4.89 |
+| 45 | 08:27:37 | ≈ 08:33 | reports, summary.md, HANDOFF.md, NOTES (SharpDraft paper read, related work), commit, push, pause | 0.09 | ≈ 4.89 |
 
 Cumulative = wall-clock instance time since the resume (short gaps between rows included).
 
-**Session 3 total: 03:39:37 → API pause ≈ 08:33 UTC = ≈ 4.89 A30-h** (cap 5, extended to ≈ 6 by the user). Old totals: 2.991 old-GPU h; session 2 ≈ 8.98 A30-h.
+**Session 3 total: 03:39:37 → pause ≈ 08:33 UTC = ≈ 4.89 A30-h** (cap 5, extended to ≈ 6 by the user). Old totals: 2.991 old-GPU h; session 2 ≈ 8.98 A30-h.
 
-## Session 4 (A30, instance up 2026-10-11 08:36:37 UTC, MACHINE_ID 534736) — SharpDraft, thinking-mode drafter, cal-full
+## Session 4 (A30, instance up 2026-10-11 08:36:37 UTC) — SharpDraft, thinking-mode drafter, cal-full
 
 Budget: **6 A30-h from 08:36:37 UTC, idle included (cap 14:36:37 UTC).** Order: item 1 (SharpDraft), item 2
 (thinking-mode drafter), item 3 (cal-full); items 4–6 of the user's list are out of this phase. Each item's table is
@@ -660,7 +659,7 @@ calibration alone +1.066, both +1.308 (sub-additive: both partly fix the same ea
 | 49 | 09:24:31 | 09:47:19 | item 2: thinking drafter baseline + S2 (49) | 0.380 | 1.179 |
 | 50 | 09:48:19 | 10:21:58 | item 3: cal-full fine-tune (1,415 × 16, lr 1e-5, full layout) | 0.561 | 1.756 |
 | 51 | 10:21:58 | 10:36:12 | item 3: cal-full replay (49) | 0.237 | 1.993 |
-| 52 | 10:36:12 | ≈ 10:45 | reports, summary.md, HANDOFF.md, full test suite (143/143), commit, push, API pause | ≈ 0.15 | ≈ 2.14 |
+| 52 | 10:36:12 | ≈ 10:45 | reports, summary.md, HANDOFF.md, full test suite (143/143), commit, push, pause | ≈ 0.15 | ≈ 2.14 |
 
-**Session 4 total: 08:36:37 → API pause ≈ 10:45 UTC = ≈ 2.14 A30-h** (cap 6). Items 4–6 of the user's list were out of
+**Session 4 total: 08:36:37 → pause ≈ 10:45 UTC = ≈ 2.14 A30-h** (cap 6). Items 4–6 of the user's list were out of
 this phase (HANDOFF.md, open questions a–c).

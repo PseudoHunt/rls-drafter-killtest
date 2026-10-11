@@ -6,8 +6,8 @@
 #   T2a  16 test traces: TTS stride 10; S2 + TTS stride 10 pooled
 #   T2b  16 test traces: S2 + TTS stride 1 (first to be cut if the 9 A30-h projection is exceeded)
 #   isolated drafting timing (baseline, window, S2; 2 dev traces, one process alone), report, summary, commit, push,
-#   grace period (logs/heldout/HOLD keeps the instance up), pause via the JarvisLabs API.
-#   DRY=1: tiny model, scratch dir, no commit/push/pause (API check only).
+#   grace period (logs/heldout/HOLD keeps the instance up), then: Pause the instance from the provider's console.
+#   DRY=1: tiny model, scratch dir, no commit/push/pause.
 set -u
 cd /home/rls_drafter_killtest
 source scripts/resume.sh || { echo "HELDOUT_ABORT resume"; exit 1; }
@@ -97,7 +97,6 @@ finish() {  # commit, push, grace period, pause
   echo "FINISH $(ts) elapsed_h=$(elapsed_h) reason=$1"
   if [ "$DRY" = 1 ]; then
     echo "DRY: would commit and push results/heldout.md results/summary.md $OUT"
-    /home/envs/env-jl/bin/python scripts/jl_pause.py --check || echo "JL check failed"
     echo "HELDOUT_DONE (dry)"; exit 0
   fi
   E=$(date -u +%H:%M:%S); S0=$(date -u -d @$START +%H:%M:%S)
@@ -115,11 +114,8 @@ finish() {  # commit, push, grace period, pause
   git commit -q -m "Held-out: final edits before pause" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" \
       && git push -q origin HEAD
   echo "PAUSING $(ts) elapsed_h=$(elapsed_h)"
-  for k in 1 2 3; do /home/envs/env-jl/bin/python scripts/jl_pause.py --pause && exit 0; sleep 60; done
-  echo "################################################################"
-  echo "###  PAUSE VIA API FAILED — PAUSE THE INSTANCE BY HAND NOW.  ###"
-  echo "################################################################"
-  exit 1
+  echo "Pause the instance from the provider's console."
+  exit 0
 }
 
 echo "HELDOUT_START $(ts) cap_h=$CAP_H dry=$DRY t2=[$T2IDS]"

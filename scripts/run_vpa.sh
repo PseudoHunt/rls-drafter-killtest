@@ -6,7 +6,7 @@
 #   freeze  configs/frozen.yaml committed + pushed before any test run (only if promoted)
 #   T3      VPA on all 50 test traces (only if promoted and within the 2 A30-h VPA budget)
 #   report  results/vpa.md, VPA section in summary.md after the held-out section, RUNLOG row, commit, push,
-#           grace (logs/vpa/HOLD keeps the instance up), pause via the JarvisLabs API.
+#           grace (logs/vpa/HOLD keeps the instance up), then: Pause the instance from the provider's console.
 # Runs only if the held-out run completed; otherwise stands down (and pauses if the held-out driver died unpaused).
 set -u
 MAIN=/home/rls_drafter_killtest
@@ -18,8 +18,7 @@ GRACE_S=${GRACE_S:-600}
 ts() { date -u +%FT%TZ; }
 pause_now() {
   echo "PAUSING $(ts)"
-  for k in 1 2 3; do /home/envs/env-jl/bin/python scripts/jl_pause.py --pause && exit 0; sleep 60; done
-  echo "###  PAUSE VIA API FAILED — PAUSE THE INSTANCE BY HAND NOW.  ###"; exit 1
+  echo "Pause the instance from the provider's console."; exit 0
 }
 
 echo "VPA_WAIT $(ts)"

@@ -96,3 +96,46 @@ def test_loop_cut_applied(tmp_path):
     assert len(out["a"]["output_ids"]) == 2000
     assert 1024 <= len(out["b"]["output_ids"]) < 3000  # truncated before the loop onset
     assert "c" not in out  # < 1024 tokens kept -> dropped
+
+
+def test_full_layout_forward_equals_full_context_replay_drafting(monkeypatch):
+    """cal-full: the layout "full" training forward at frontier t gives the stock full-context replay's drafting z."""
+    from rlsdk.adapters import Baseline
+    t, d, ids, tf, f = _feats(monkeypatch)
+    seen = {}
+
+    class Spy(Baseline):
+        def apply(self, z, slots):
+            seen[len(seen)] = z.detach().clone()
+            return z
+
+    rounds = simulate(d, t, ids, P, tf, Spy(), NEW)
+    checked = 0
+    for i, r in enumerate(rounds):
+        tt = r["t"]
+        if tt > ids.shape[0] - 16 or i not in seen:
+            continue
+        th, noise, pos, mask, _ = cal.build_batch(d, t, [f], [(0, tt)], ids.device, layout="full")
+        assert th.shape[1] == tt and torch.equal(pos[0], torch.arange(tt + 16))
+        with torch.no_grad():
+            z = cal.s2_forward(d, th, noise, pos, mask)[0]
+        assert torch.allclose(z, seen[i], atol=1e-5, rtol=1e-5), (tt, (z - seen[i]).abs().max())
+        checked += 1
+    assert checked > 50
+
+
+def test_micro_batching_same_training(monkeypatch):
+    """micro = 2 / 4 sub-batches give the same mean-over-batch gradient (fp32 tiny: same weights after 5 steps)."""
+    t, d, ids, tf, f = _feats(monkeypatch)
+    pristine = {k: v.clone() for k, v in d.state_dict().items()}
+    res = {}
+    for micro in (1, 2, 4):
+        losses = cal.train(d, t, [f], 1e-3, 5, 8, ids.device, log=lambda m: None, pristine=pristine,
+                           layout="full", micro=micro)
+        res[micro] = (losses, {k: v.clone() for k, v in d.state_dict().items()})
+    d.load_state_dict(pristine)
+    for micro in (2, 4):
+        assert all(abs(a - b) < 1e-5 for a, b in zip(res[1][0], res[micro][0]))
+        for k in pristine:
+            assert torch.allclose(res[1][1][k], res[micro][1][k], atol=1e-6, rtol=1e-5), k
+    assert any(not torch.equal(res[1][1][k], pristine[k]) for k in pristine)

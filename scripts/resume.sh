@@ -31,4 +31,8 @@ else
   echo "no GPU visible (CPU session)"
   $PY -c "import torch, transformers, dflash; print('torch', torch.__version__, 'transformers', transformers.__version__)" || fail=1
 fi
+# git push uses gh as credential helper (auth in /home/.config/gh survives a pause; the binary in /usr/bin does not)
+command -v gh >/dev/null || echo "RESUME WARN: gh missing (git push will fail); install the pinned release:" \
+  "https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz (check its sha256 against" \
+  "gh_2.62.0_checksums.txt) -> install -m 755 .../bin/gh /usr/bin/gh"
 [ $fail = 0 ] && echo "RESUME OK" || echo "RESUME FAILED"

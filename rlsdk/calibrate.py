@@ -85,18 +85,21 @@ def anchors(feats, n, seed=0):
     return out
 
 
-def visible_rows(drafter, f, t, device):
-    """S2 visible context positions at frontier t (the replay's own selection code)."""
+def visible_rows(drafter, f, t, device, layout="s2"):
+    """S2 visible context positions at frontier t (the replay's own selection code); layout "full" (cal-full,
+    session 4): every position [0, t) at its own position, i.e. the stock full-context replay's drafter input."""
+    if layout == "full":
+        return torch.arange(t)
     wc = WindowCache(drafter, f["P"], W, 1, device, next(drafter.parameters()).dtype,
                      far={"n": N_FAR, "chunk": CHUNK, "score": f["score"], "seed": 0})
     wc.begin(0, t, 16)
     return wc.visible_positions().cpu()
 
 
-def build_batch(drafter, target, feats, batch, device):
-    """Padded S2-layout batch: ctx rows [B, Lmax, F], block embeddings, position ids, bool mask, targets."""
+def build_batch(drafter, target, feats, batch, device, layout="s2"):
+    """Padded S2-layout (or full-layout) batch: ctx rows [B, Lmax, F], block embeddings, position ids, bool mask, targets."""
     scale = float(_draft_value(drafter.config, "input_embedding_scale", 1.0))
-    vis = [visible_rows(drafter, feats[i], t, device) for i, t in batch]
+    vis = [visible_rows(drafter, feats[i], t, device, layout) for i, t in batch]
     Ls = [v.numel() for v in vis]
     Lm = max(Ls)
     F = feats[0]["ctx"].shape[-1]
@@ -135,8 +138,11 @@ def batch_loss(drafter, head, z, hs, weights):
     return (kl * weights[None, :15]).sum(1).mean()
 
 
-def train(drafter, target, feats, lr, steps, batch_size, device, seed=0, log=print, pristine=None):
-    """Adam on fp32 masters; returns per-step losses. Drafter ends with the trained bf16 weights."""
+def train(drafter, target, feats, lr, steps, batch_size, device, seed=0, log=print, pristine=None, layout="s2",
+          micro=1):
+    """Adam on fp32 masters; returns per-step losses. Drafter ends with the trained bf16 weights.
+    micro > 1: the step's anchors run as `micro` consecutive sub-batches (forward + backward each, loss weighted by
+    its share of the batch, gradients summed in fp32 on the masters) = the same mean-over-batch gradient."""
     head = _output_head(target)
     if pristine is not None:
         drafter.load_state_dict(pristine)
@@ -150,14 +156,25 @@ def train(drafter, target, feats, lr, steps, batch_size, device, seed=0, log=pri
     losses = []
     t0 = time.time()
     for s in range(steps):
-        th, noise, pos, mask, hs = build_batch(drafter, target, feats, sched[s * batch_size:(s + 1) * batch_size],
-                                               device)
-        with torch.enable_grad():
-            loss = batch_loss(drafter, head, s2_forward(drafter, th, noise, pos, mask), hs, weights)
-            loss.backward()
-        for p, mp in zip(params, masters):
-            mp.grad = None if p.grad is None else p.grad.float()
-            p.grad = None
+        step_anchors = sched[s * batch_size:(s + 1) * batch_size]
+        if micro > 1:  # same anchors, same mean gradient; sub-batches of similar length pad less
+            step_anchors = sorted(step_anchors, key=lambda it: it[1])
+        size = -(-batch_size // micro)
+        loss = 0.0
+        for mp in masters:
+            mp.grad = None
+        for j in range(0, batch_size, size):
+            part = step_anchors[j:j + size]
+            th, noise, pos, mask, hs = build_batch(drafter, target, feats, part, device, layout)
+            with torch.enable_grad():
+                lp = batch_loss(drafter, head, s2_forward(drafter, th, noise, pos, mask), hs, weights)
+                (lp * (len(part) / batch_size) if micro > 1 else lp).backward()
+            del th, noise, pos, mask, hs
+            loss = loss + lp.detach() * (len(part) / batch_size)
+            for p, mp in zip(params, masters):
+                if p.grad is not None:
+                    mp.grad = p.grad.float() if mp.grad is None else mp.grad + p.grad.float()
+                p.grad = None
         opt.step()
         opt.zero_grad(set_to_none=True)
         with torch.no_grad():
@@ -198,6 +215,8 @@ def main(argv=None):
     ap.add_argument("--tiny", action="store_true")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--limit", type=int, default=None, help="first N traces only (dry runs)")
+    ap.add_argument("--layout", choices=["s2", "full"], default="s2", help="full = cal-full (session 4)")
+    ap.add_argument("--micro", type=int, default=1, help="sub-batches per step (memory; same gradient)")
     a = ap.parse_args(argv)
     torch.backends.cuda.matmul.allow_tf32 = False
     device = torch.device(a.device)
@@ -221,7 +240,7 @@ def main(argv=None):
     log(f"teacher-forced passes: {time.time() - t0:.0f}s")
     if a.probe is not None:
         t1 = time.time()
-        train(drafter, target, feats, a.lrs[0], a.probe, a.batch, device, log=log, pristine=pristine)
+        train(drafter, target, feats, a.lrs[0], a.probe, a.batch, device, log=log, pristine=pristine, layout=a.layout, micro=a.micro)
         if device.type == "cuda":
             torch.cuda.synchronize()
         log(f"PROBE {a.probe} steps x batch {a.batch}: {(time.time() - t1) / a.probe:.3f} s/step; "
@@ -232,7 +251,8 @@ def main(argv=None):
         if device.type == "cuda":
             torch.cuda.synchronize()
         t1 = time.time()
-        train(drafter, target, feats, a.lrs[0], n_probe, a.batch, device, log=lambda m: None, pristine=pristine)
+        train(drafter, target, feats, a.lrs[0], n_probe, a.batch, device, log=lambda m: None, pristine=pristine,
+              layout=a.layout, micro=a.micro)
         if device.type == "cuda":
             torch.cuda.synchronize()
         sps = (time.time() - t1) / n_probe
@@ -240,10 +260,12 @@ def main(argv=None):
         a.steps = max(1, int(left / (len(a.lrs) * sps)))
         log(f"STEPS FIXED: probe {sps:.3f} s/step (batch {a.batch}); {left:.0f}s left for {len(a.lrs)} lrs -> "
             f"steps = {a.steps} ({a.steps * a.batch} anchors per lr)")
-    summary = {"traces": [t["trace_id"] for t in traces], "steps": a.steps, "batch": a.batch, "runs": {}}
+    summary = {"traces": [t["trace_id"] for t in traces], "steps": a.steps, "batch": a.batch, "layout": a.layout,
+               "micro": a.micro, "runs": {}}
     for lr in a.lrs:
         t1 = time.time()
-        losses = train(drafter, target, feats, lr, a.steps, a.batch, device, log=log, pristine=pristine)
+        losses = train(drafter, target, feats, lr, a.steps, a.batch, device, log=log, pristine=pristine,
+                       layout=a.layout, micro=a.micro)
         d = os.path.join(a.out, f"lr{lr:g}")
         drafter.save_pretrained(d)
         sha = sha256_dir(d)

@@ -1,0 +1,2 @@
+- {method: baseline}
+- {method: farsel, config: {W: 1024, keep: prompt, n: 16, score: mid3}}

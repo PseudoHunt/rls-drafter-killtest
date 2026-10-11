@@ -485,7 +485,7 @@ reproduces s3_heldout.md exactly): full − S2+cal +0.140 [+0.122, +0.157]; 0–
 decision 2026-10-11): beats TTS +0.340 but 11.36 ms/round = 16.3% of TTS's update cost → fails the pre-registered
 ≤ 10% rule; the 10% line is not relaxed. S2+cal stays the headline.
 
-**PRE-REGISTERED (2026-10-11 09:00 UTC, before any GPU run this session).**
+**PRE-REGISTERED (2026-10-11 08:55 UTC, commit 0c0ebde, before any GPU run this session).**
 
 Fixed for every arm: the 49-trace test set, the loop-cut rule (decision variant), the bins 0–2K / 2–4K / 4–8K / ≥ 8K
 (round start output position), τ = mean of AIME and LCB pooled τ, paired bootstrap 95% CIs stratified by dataset,

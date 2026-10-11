@@ -1,0 +1,1 @@
+- {method: sharp, config: {k: 32, s: 5, logcap: 0.5, N0: 2048, ctx: full}}

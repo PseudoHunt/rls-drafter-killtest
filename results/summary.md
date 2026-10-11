@@ -1,5 +1,56 @@
 # Kill test summary: closed-form (RLS) test-time drafter adaptation vs TTS
 
+<!-- S4 BEGIN -->
+
+## Session 4 (A30): SharpDraft, a thinking-mode drafter, and cal-full — held-out (49 test traces)
+
+All pre-registered in RUNLOG.md (session 4, commit 0c0ebde) before any GPU run; same test set, loop-cut rule, bins
+and bootstrap (paired, stratified by dataset, B = 10,000, seed 0) as session 3; S2, TTS stride 1, S2+cal and full
+reused, not rerun. Reports: `results/s4_anchor.md`, `results/s4_sharpdraft.md`, `results/s4_thinking.md`,
+`results/s4_calfull.md`.
+
+**Headline unchanged: S2+cal beats TTS stride 1 at zero online cost** (τ 4.408 vs 4.208, +0.200 [+0.179, +0.222]).
+"full" is the cost–τ trade-off point (+0.140 more τ for 11.4 ms/round, 6.1× cheaper than TTS; fails the ≤ 10% rule).
+
+| arm (49 test traces) | τ | τ 0–2K | τ 2–4K | τ 4–8K | τ ≥8K | − TTS stride 1 | − S2+cal | update ms/round |
+|---|---|---|---|---|---|---|---|---|
+| baseline (released, full context) | 3.100 | | | | | | | 0 |
+| S2 | 4.069 | 3.516 | 4.020 | 4.185 | 4.416 | −0.139 [−0.173, −0.107] | −0.339 [−0.371, −0.308] | 0 |
+| TTS stride 1 | 4.208 | 3.693 | 4.396 | 4.213 | 4.483 | — | −0.200 [−0.222, −0.179] | 69.63 |
+| **S2+cal** | **4.408** | 3.779 | 4.370 | 4.578 | 4.756 | +0.200 [+0.179, +0.222] | — | **0** |
+| SharpDraft (full context) | 3.644 | 3.517 | 3.980 | 3.630 | 3.557 | −0.564 [−0.624, −0.502] | −0.764 [−0.824, −0.702] | 0 |
+| SharpDraft + S2+cal ¹ | 4.410 | 3.781 | 4.369 | 4.579 | 4.761 | +0.202 [+0.181, +0.224] | +0.002 [+0.001, +0.004] | 0 |
+| thinking-mode drafter ² | 3.588 | 3.248 | 3.769 | 3.898 | 3.438 | −0.620 [−0.686, −0.552] | −0.820 [−0.893, −0.742] | 0 |
+| thinking-mode drafter + S2 ² | 3.790 | 3.247 | 3.759 | 3.917 | 4.109 | −0.418 [−0.474, −0.366] | −0.618 [−0.686, −0.553] | 0 |
+| cal-full ³ | 4.166 | 3.763 | 4.322 | 4.342 | 4.187 | −0.042 [−0.077, −0.001] | −0.242 [−0.272, −0.206] | 0 |
+| full (S2+cal + batched TTS s10) | 4.548 | 3.802 | 4.483 | 4.741 | 5.007 | +0.340 [+0.319, +0.360] | +0.140 [+0.122, +0.157] | 11.36 |
+
+¹ LCB from a new run (26 traces); AIME identical to S2+cal by construction (β̂ = 1 on every AIME round in the S2
+layout). ² jgeuter/qwen3-4b-dpard-thinking-b16 @ 78baf29 (3 layers, feature layers [1, 17, 33], D-PARD, ~101K
+thinking samples). ³ the S2+cal recipe (same data, anchors, steps, lr) in the full-context layout, run without a window.
+
+**Readings (pre-registered):**
+- **SharpDraft** (arXiv 2610.05106; k 32, s 5, cap e^0.5, N0 = 2048 as published for Qwen, not tuned) works on the
+  full-context drafter as advertised — +0.544 [+0.478, +0.594] over the released baseline, gain growing with output
+  position (anchor: +0.000 / +0.078 / +0.617 / +1.146 by bin) — but it is **below S2 (−0.425 [−0.467, −0.374]) and
+  below S2+cal (−0.764)**: changing which keys the drafter sees beats rescaling attention over all of them.
+- **SharpDraft + S2+cal: the pre-registered "complementary" rule is met, but the gain is +0.002 τ (0.05%)** — 0 on
+  AIME by construction, +0.005 [+0.001, +0.008] on LCB. **S2 removes the dilution SharpDraft corrects for:** in full
+  context its scale averages 1.20 (max 1.44, 16% of rounds at 1, never at the cap; visible keys median 6.1K, p90
+  13.2K); in the S2 layout the visible set is ≤ prompt + 1,552 keys, so β̂ = 1 on 100% of AIME rounds and averages
+  1.014 on LCB (max 1.093, N median 2.1K).
+- **Thinking-mode drafter:** +0.488 over the released baseline but **below S2+cal by 0.820** (and below TTS); the
+  "gain is available by retraining" reading does not apply to this public checkpoint (it also differs in depth,
+  feature layers and objective). S2 helps it too (+0.202; ≥ 8K +0.671): the context effect is not specific to one
+  checkpoint.
+- **cal-full: below S2+cal by 0.242 [0.206, 0.272]** → the S2 layout adds value on top of calibration, almost all of
+  it late (S2+cal − cal-full: 0–2K +0.016, 2–4K +0.047, 4–8K +0.236, ≥ 8K +0.568). Calibration alone is the largest
+  single factor (+1.066 over the released baseline; vs S2 alone +0.969; both +1.308) and nearly matches TTS at zero
+  online cost (−0.042 [−0.077, −0.001]), but still decays at ≥ 8K. **Both parts of S2+cal matter: calibration fixes
+  the thinking-mode mismatch (early and throughout), the S2 layout fixes the long-context decay (late).**
+
+<!-- S4 END -->
+
 <!-- S3 BEGIN -->
 
 ## Session 3 (A30): one-time thinking-mode calibration (S2+cal) and exact batched pooled TTS — held-out

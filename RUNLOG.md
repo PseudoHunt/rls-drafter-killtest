@@ -649,3 +649,18 @@ full context) gives the largest single gain (+1.066 over the released baseline) 
 (CI upper bound −0.001) at zero online cost; it is already above TTS in 0–2K and 4–8K but decays at ≥ 8K (4.187 vs
 4.342 at 4–8K), which is what the S2 layout removes. Decomposition vs the released baseline (3.100): S2 alone +0.969,
 calibration alone +1.066, both +1.308 (sub-additive: both partly fix the same early/late deficit).
+
+### Session 4 budget (cumulative = wall-clock instance time since 08:36:37 UTC, idle and short gaps included)
+
+| # | start (UTC) | end (UTC) | what | A30-h | cum A30-h |
+|---|---|---|---|---|---|
+| 46 | 08:36:37 | 08:56:05 | Step 0 (orientation, 127 tests, hash check, report), idle awaiting go-ahead, SharpDraft PDF re-read, thinking drafter download + config check, SharpDraft code + 14 tests, pre-registration, gh reinstall | 0.324 | 0.324 |
+| 47 | 08:56:05 | 08:58:14 | item 1d anchor (4 reference traces) | 0.036 | 0.360 |
+| 48 | 08:58:56 | 09:23:25 | item 1e: SD (49) + SD+S2+cal (26 LCB); cal-full code + tests, NOTES §15 in parallel | 0.408 | 0.780 |
+| 49 | 09:24:31 | 09:47:19 | item 2: thinking drafter baseline + S2 (49) | 0.380 | 1.179 |
+| 50 | 09:48:19 | 10:21:58 | item 3: cal-full fine-tune (1,415 × 16, lr 1e-5, full layout) | 0.561 | 1.756 |
+| 51 | 10:21:58 | 10:36:12 | item 3: cal-full replay (49) | 0.237 | 1.993 |
+| 52 | 10:36:12 | ≈ 10:45 | reports, summary.md, HANDOFF.md, full test suite (143/143), commit, push, API pause | ≈ 0.15 | ≈ 2.14 |
+
+**Session 4 total: 08:36:37 → API pause ≈ 10:45 UTC = ≈ 2.14 A30-h** (cap 6). Items 4–6 of the user's list were out of
+this phase (HANDOFF.md, open questions a–c).

@@ -9,17 +9,45 @@ backward every round, each round stores its exact loss inputs and the step runs 
     time returns exactly the stale K/V the round attended to -- never K/V rebuilt with the current weights,
   - the round's RoPE cos/sin for [visible context; block] (the policy's contiguous positions),
   - the valid-slot target logits in bf16 (= what the per-round path computes, head(h*) in bf16, before .float()).
-Rounds are padded to a common length and batched; padded keys are masked out (bool mask, math SDPA), padded rows
+Rounds are padded to a common length and batched; padded keys are masked out (bool mask, gqa_attention), padded rows
 of the new context get zero attention weight and hence zero gradient. The summed loss equals the per-round losses
 summed, so the gradient equals the per-round accumulated gradient (up to float summation order).
 """
 from types import SimpleNamespace
 
 import torch
-from torch.nn.attention import SDPBackend, sdpa_kernel
 from dflash.model import rotate_half
 
+import contextlib
+
+import dflash.model as dm
+
 from .window import deferred_key_rope
+
+
+def gqa_attention(module, q, k, v, attention_mask, scaling=None, **kw):
+    """Masked attention without expanding K/V to the query heads (memory: the batched step's main cost was the
+    repeat_kv copies + math-SDPA fp32 copies of every pooled round). Query head h uses KV head h // groups, as
+    repeat_kv. Scores and softmax in fp32; same maths as SDPA up to float rounding. Returns [B, Q, H, d]."""
+    B, H, Q, d = q.shape
+    Hkv, K = k.shape[1], k.shape[2]
+    g = H // Hkv
+    s = (q.float().reshape(B, Hkv, g * Q, d) @ k.float().transpose(-1, -2)).view(B, Hkv, g, Q, K) * scaling
+    if attention_mask is not None:  # bool [B, 1, Q, K], True = attend
+        s = s.masked_fill(~attention_mask[:, :, None], float("-inf"))
+    p = torch.softmax(s, dim=-1).to(v.dtype).view(B, Hkv, g * Q, K)
+    out = (p @ v).view(B, H, Q, d)
+    return out.transpose(1, 2).contiguous(), None
+
+
+@contextlib.contextmanager
+def _gqa():
+    orig = dm.ALL_ATTENTION_FUNCTIONS
+    dm.ALL_ATTENTION_FUNCTIONS = {"sdpa": gqa_attention}
+    try:
+        yield
+    finally:
+        dm.ALL_ATTENTION_FUNCTIONS = orig
 
 
 def capture(cache, th_rows, noise, pos, target_logits_bf16, m):
@@ -79,7 +107,7 @@ def batched_loss(drafter, head, recs, weights):
     mask = torch.zeros((len(recs), 1, q, K), dtype=torch.bool, device=dev)
     for b, L in enumerate(lens):
         mask[b, :, :, :L] = True
-    with sdpa_kernel(SDPBackend.MATH), deferred_key_rope():
+    with deferred_key_rope(), _gqa():
         out = drafter(target_hidden=th, noise_embedding=noise, position_ids=pos, attention_mask=mask,
                       past_key_values=_BatchView(recs, N, K), use_cache=True)[:, 1 - q:, :]
     z = torch.cat([out[b, :r.m] for b, r in enumerate(recs)], 0)

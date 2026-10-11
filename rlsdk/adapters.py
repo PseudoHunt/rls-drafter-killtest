@@ -323,6 +323,8 @@ class TTS:
         # forward + backward at the step. check (tests): also accumulate the per-round gradient and log the rel. error
         self.batched = bool(config.get("batched", False))
         self.check = bool(config.get("check", False))
+        # micro: rounds per batched forward/backward inside one step (memory bound; gradients summed in fp32)
+        self.micro = int(config.get("micro", 10))
         # warm (output tokens): rounds starting before output position `warm` take a per-round Adam step (stride 1);
         # later rounds use the batched pooled schedule (stride counted from the first post-warm round)
         self.warm = None if config.get("warm") is None else int(config["warm"])
@@ -447,11 +449,12 @@ class TTS:
             loss = 0.0
             for q in sorted({r.q for r in self.buf}):  # one batch per block size (smaller only at max_length)
                 recs = [r for r in self.buf if r.q == q]
-                with torch.enable_grad():
-                    lt = batched_loss(self.drafter, rnd.head, recs, self.weights)
-                    lt.backward()
-                self._accumulate()
-                loss += float(lt.detach())
+                for i in range(0, len(recs), self.micro):  # micro-batches of rounds, gradients summed in fp32
+                    with torch.enable_grad():
+                        lt = batched_loss(self.drafter, rnd.head, recs[i:i + self.micro], self.weights)
+                        lt.backward()
+                    self._accumulate()
+                    loss += float(lt.detach())
             if self.check:
                 num = sum(float(((mp.grad - g) ** 2).sum()) for mp, g in zip(self.masters, self.ref)
                           if g is not None)

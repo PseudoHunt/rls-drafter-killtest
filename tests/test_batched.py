@@ -13,13 +13,13 @@ def s2_small(monkeypatch):
     return "_test"
 
 
-@pytest.mark.parametrize("stride", [4, 10])
-def test_batched_gradient_equals_per_round_accumulated(stride, s2_small):
+@pytest.mark.parametrize("stride,micro", [(4, 5), (10, 5), (10, 3), (10, 10)])
+def test_batched_gradient_equals_per_round_accumulated(stride, micro, s2_small):
     """At every step the batched gradient equals the per-round accumulated gradient of the same k rounds (same
     trajectory; each round under its own S2 visible keys and stale context K/V): rel. error < 1e-3."""
     t, d, ids, tf = _trace()
     rounds, _, diag = _run(t, d, ids, tf, {"lr": 1e-2, "stride": stride, "pool": True, "batched": True,
-                                           "check": True, "ctx": s2_small})
+                                           "check": True, "micro": micro, "ctx": s2_small})
     errs = diag["check_rel_err"]
     assert len(errs) == diag["n_steps"] > 10
     assert max(errs) < 1e-3, errs
@@ -121,3 +121,20 @@ def test_warm_schedule_then_batched(s2_small):
     assert diag["n_steps"] == len(pre) + len(post) // 4
     assert len(diag["check_rel_err"]) == len(post) // 4 and max(diag["check_rel_err"]) < 1e-3
     assert P > 0
+
+
+def test_gqa_attention_equals_sdpa():
+    from transformers.integrations.sdpa_attention import sdpa_attention_forward
+
+    class M:
+        num_key_value_groups, is_causal = 4, False
+
+    g = torch.Generator().manual_seed(0)
+    q, k, v = (torch.randn(3, 8, 16, 32, generator=g), torch.randn(3, 2, 50, 32, generator=g),
+               torch.randn(3, 2, 50, 32, generator=g))
+    mask = torch.ones(3, 1, 16, 50, dtype=torch.bool)
+    mask[1, :, :, 40:] = False
+    mask[2, :, :, 20:] = False
+    a = bt.gqa_attention(M(), q, k, v, mask, scaling=0.2)[0]
+    b = sdpa_attention_forward(M(), q, k, v, mask, scaling=0.2, dropout=0.0)[0]
+    assert a.shape == b.shape and torch.allclose(a, b, atol=1e-5)

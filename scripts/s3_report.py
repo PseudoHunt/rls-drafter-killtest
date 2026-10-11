@@ -109,8 +109,15 @@ def step1(args):
     c = cuts()
     rt = R("results/raw_test")
     arms = [Arm("TTS stride 1 (existing)", rt, TTS1, T2, c), Arm("hybrid, per-round pooled (existing)", rt, HYB, T2, c),
-            Arm("batched pooled stride 10", rt, B10, T2, c), Arm("batched pooled stride 20 (exploratory)", rt, B20, T2, c)]
+            Arm("batched pooled stride 10", rt, B10, T2, c)]
     ids = sorted(arms[0].dec)
+    have20 = [t for t in T2 if os.path.exists(path_for(rt, t, B20))]
+    note20 = ""
+    if len(have20) == len(T2):
+        arms.append(Arm("batched pooled stride 20 (exploratory)", rt, B20, T2, c))
+    elif have20:
+        note20 = (f"Stride 20 (exploratory) ran on {len(have20)}/16 traces only (budget): "
+                  + ", ".join(have20) + "; table on that subset below.")
     tts_u = arms[0].update_ms()[0]
     t_h, t_b = tau(arms[1].stats(), ids), tau(arms[2].stats(), ids)
     lines = ["# Step 1 — exact batched pooled update (16 T2 traces, A30)", "",
@@ -132,6 +139,11 @@ def step1(args):
     bt = {t: per_trace_tau(s2, t) for t in ids}
     lines += ["", "| trace | hybrid τ | batched s10 τ | Δ |", "|---|---|---|---|"]
     lines += [f"| {t} | {hy[t]:.3f} | {bt[t]:.3f} | {bt[t] - hy[t]:+.3f} |" for t in ids]
+    if note20:
+        sub = [t for t in ids if t in have20]
+        a20 = Arm("batched pooled stride 20 (exploratory)", rt, B20, sub, c)
+        sub_arms = [Arm(a.label, rt, a.key, sub, c) for a in arms] + [a20]
+        lines += ["", note20, "", tau_table(sub_arms, sorted(a20.dec))]
     open(R("results/batched.md"), "w").write("\n".join(lines) + "\n")
     print("\n".join(lines))
 

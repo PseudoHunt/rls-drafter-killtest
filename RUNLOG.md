@@ -375,3 +375,36 @@ Notes added before any Step 1 result was read (2026-10-11 04:33 UTC):
   logged as "STEPS FIXED" in ckpt/cal/train_log.txt before training; batch 16 anchors/step.
 - Step 4 contingency arm implemented in advance (TTS config `warm: 2048`; tests/test_batched.py), used only if the
   mode-mismatch reading is "not supported". 124/124 CPU tests pass.
+
+**Step 1 OOM and fix (2026-10-11 04:45 UTC; no Step 1 τ has been read or reported yet).** The first Step 1 run
+(04:21:11–04:37:41) hit CUDA OOM in the batched backward of the stride-20 job on lcb_abc391_e (19 of 32 jobs done;
+peak reserved had grown to 18–20 GB at stride 10 and 22.7 GB at stride 20 on LCB traces). Cause: the batched forward
+holds the GQA-expanded K/V (and math-SDPA fp32 copies) of all pooled rounds at once (≈ 0.4–0.5 GB per round). Fix
+(same maths): the step's rounds are run as micro-batches of 5 rounds (forward + backward per micro-batch, gradients
+summed in fp32 on the masters; TTS config `micro`, default 5); tests/test_batched.py checks micro ∈ {3, 5, 10}
+(all < 1e-3). For a clean cost measurement, all 16 stride-10 jobs are rerun with micro-batching (the 10 finished
+full-batch stride-10 files are kept in results/raw_test_s3_nomicro/ for the record, not used). Stride 20
+(exploratory): the 9 finished full-batch files are kept and the remaining 7 traces run micro-batched (disclosed in
+the report). The Step 1 rerun runs after the calibration evaluations (scripts/run_s3_after_cal.sh), which stops
+before Step 4 if the τ check fails.
+
+**Eval OOM (05:33–05:40 UTC):** the two S2+cal evaluation workers (lr pick) ran next to the TTS stride 1 reference
+worker and OOMed in their teacher-forced passes (TTS worker ≈ 13 GB steady + a light worker's TF pass > 24 GB); one
+S2+cal file (lr 3e-6, aime24_II_14) had finished and is kept (deterministic replay). The evals are rerun after the TTS
+reference worker ends, as 2 light workers with no TTS worker alongside (scripts/run_s3_after_cal.sh), then Step 1
+rerun, τ guard, lr pick, Step 4. Step 3 itself: 04:54:08–05:32:52 = 0.646 A30-h (cap 0.75); 59 traces (1 dropped by the
+loop rule), 1,415 steps × 16 anchors per lr; ckpt sha256: lr 3e-6 7a0e0fb8d7002feb6f0f51f7c0465733f67157c628bffae5678bd3461021ea0d,
+lr 1e-5 cc25cc15a3782b56e2a5be9d1a17bbaf74718be966413447b76a5b728e8ca5d7.
+
+**Second Step 1 OOM and fix (06:20 UTC; Step 1 τ still not read).** The micro-batched rerun (05:52:28–06:20) also hit
+OOM in the batched forward, on lcb_arc190_c (prompt 1,689 tokens → ≈ 3,240 visible keys per round). Root cause: the
+batched forward went through transformers' SDPA path, which expands K/V to all 32 query heads (repeat_kv) and, in the
+math kernel, keeps fp32 copies for the backward. Fix (same maths): the batched forward uses its own grouped-query
+attention (`rlsdk/batched.py::gqa_attention`: per KV head its 4 query heads, fp32 scores/softmax, masked keys −inf;
+no K/V expansion); tests: equals transformers' SDPA output, and the batched gradient still equals the per-round
+(SDPA) accumulated gradient (< 1e-3, micro ∈ {3, 5, 10}); 127/127 CPU tests pass. Micro-batch default → 10 rounds (one batched
+pass per stride-10 step). All 16 stride-10 jobs rerun with this implementation (the micro-5 files are kept in
+results/raw_test_s3_micro5/, not used). Budget trim: stride 20 (exploratory) is not rerun; 15/16 traces exist
+(9 full-batch, 6 micro-5, all same maths; lcb_arc190_c missing) and are reported as a partial, exploratory table.
+Step 6 (TTS stride 1 refresh, 4 reference traces) runs now (06:21) on the otherwise idle GPU; chain driver
+(scripts/run_s3_chain.sh): Step 6 → Step 1 rerun → τ guard → lr pick → Step 4.

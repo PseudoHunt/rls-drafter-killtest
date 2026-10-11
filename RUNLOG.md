@@ -584,3 +584,36 @@ Readings (pre-registered):
   per the rule, with that magnitude stated every time; in practice S2 removes most of the dilution SharpDraft
   corrects for (N stays ≈ N0).
 - "SharpDraft + S2" (released weights) dropped (user decision).
+
+### Item 2 — thinking-mode drafter: results (posted 09:49 UTC, before item 3 starts)
+
+Run 09:24:31–09:47:19 (2 light workers, both arms per trace; results/s4_thinking.md). Drafter
+jgeuter/qwen3-4b-dpard-thinking-b16 @ 78baf29 (3 layers, target layers [1, 17, 33]; loads unchanged in the DFlash path).
+
+| arm | τ | τ 0–2K | τ 2–4K | τ 4–8K | τ ≥8K | τ AIME (23) | τ LCB (26) | update ms/round |
+|---|---|---|---|---|---|---|---|---|
+| TTS stride 1 (reused) | 4.208 | 3.693 | 4.396 | 4.213 | 4.483 | 4.353 | 4.063 | 69.63 |
+| S2+cal (reused) | 4.408 | 3.779 | 4.370 | 4.578 | 4.756 | 4.607 | 4.209 | 0 |
+| **thinking baseline** (full context) | **3.588** | 3.248 | 3.769 | 3.898 | 3.438 | 3.593 | 3.583 | 0 |
+| **thinking + S2** | **3.790** | 3.247 | 3.759 | 3.917 | 4.109 | 3.797 | 3.784 | 0 |
+
+| contrast (paired 95% CI) | overall | 0–2K | 2–4K | 4–8K | ≥8K | AIME | LCB |
+|---|---|---|---|---|---|---|---|
+| thinking baseline − TTS stride 1 | −0.620 [−0.686, −0.552] | −0.445 | −0.627 | −0.315 | −1.044 | −0.760 [−0.857, −0.667] | −0.479 [−0.568, −0.379] |
+| thinking baseline − S2+cal | **−0.820 [−0.893, −0.742]** | −0.531 | −0.600 | −0.679 | −1.318 | −1.014 [−1.126, −0.905] | −0.626 [−0.716, −0.516] |
+| thinking + S2 − TTS stride 1 | −0.418 [−0.474, −0.366] | −0.446 | −0.637 | −0.296 | −0.373 | −0.557 [−0.659, −0.461] | −0.279 [−0.318, −0.242] |
+| thinking + S2 − S2+cal | −0.618 [−0.686, −0.553] | −0.532 | −0.610 | −0.660 | −0.646 | −0.811 [−0.939, −0.692] | −0.425 [−0.471, −0.376] |
+| thinking + S2 − thinking baseline | +0.202 [+0.141, +0.255] | | | | | | |
+| thinking baseline − baseline (released, reused) | +0.488 [+0.395, +0.561] | | | | | | |
+| thinking + S2 − S2 (released, reused) | −0.278 [−0.341, −0.221] | | | | | | |
+
+(per-bin CIs: results/s4_thinking.md.)
+
+Reading (pre-registered): **thinking baseline is below S2+cal** (−0.820, CI excludes 0) → the "calibration's gain is
+available by retraining" reading does **not** apply to this checkpoint. Caveats: this drafter differs in more than
+training mode (3 layers vs 5, feature layers [1, 17, 33], Rényi-1/2 D-PARD objective, chat data), so it does not
+rule out a better thinking-mode retrain; it shows that a public thinking-trained DFlash drafter for this target
+does not reach S2+cal. It still decays in full context (≥ 8K 3.438), and S2 helps it too (+0.202; ≥ 8K +0.671),
+i.e. the context effect is not specific to the released checkpoint.
+
+**Item 3 gate (09:49 UTC):** 6-h cap at 14:36:37; elapsed 1.21 A30-h → 4.79 A30-h remain ≥ 2.5 → **cal-full starts.**
